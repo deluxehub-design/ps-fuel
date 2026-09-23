@@ -9,11 +9,11 @@ local nozzleSessions = {}
 local vehicleProfiles = {}
 
 local function getPlayer(src)
-    return exports.qbx_core:GetPlayer(src)
+    return PSFuelFramework and PSFuelFramework.GetPlayer and PSFuelFramework.GetPlayer(src) or nil
 end
 
 local function getCitizenId(player)
-    return player and player.PlayerData and player.PlayerData.citizenid
+    return PSFuelFramework and PSFuelFramework.GetIdentifier and PSFuelFramework.GetIdentifier(player)
 end
 
 local function audit(action, src, player, details)
@@ -175,33 +175,19 @@ local function playerIdentifier(player)
 end
 
 local function getPlayerMoney(player, account)
-    local identifier = playerIdentifier(player)
-    if not identifier then return 0 end
-    local ok, value = pcall(function()
-        return exports.qbx_core:GetMoney(identifier, account)
-    end)
-    if ok and value ~= false then return tonumber(value) or 0 end
-    return tonumber(player and player.PlayerData and player.PlayerData.money and player.PlayerData.money[account]) or 0
+    return PSFuelFramework and PSFuelFramework.GetMoney and PSFuelFramework.GetMoney(player, account) or 0
 end
 
 local function removePlayerMoney(player, account, amount, reason)
-    local identifier = playerIdentifier(player)
     amount = math.max(0, math.floor(tonumber(amount) or 0))
-    if not identifier or getPlayerMoney(player, account) < amount then return false end
-    local ok, result = pcall(function()
-        return exports.qbx_core:RemoveMoney(identifier, account, amount, reason)
-    end)
-    return ok and result == true
+    if not player or getPlayerMoney(player, account) < amount then return false end
+    return PSFuelFramework and PSFuelFramework.RemoveMoney and PSFuelFramework.RemoveMoney(player, account, amount, reason) == true
 end
 
 local function addPlayerMoney(player, account, amount, reason)
-    local identifier = playerIdentifier(player)
     amount = math.max(0, math.floor(tonumber(amount) or 0))
-    if not identifier then return false end
-    local ok, result = pcall(function()
-        return exports.qbx_core:AddMoney(identifier, account, amount, reason)
-    end)
-    return ok and result == true
+    if not player then return false end
+    return PSFuelFramework and PSFuelFramework.AddMoney and PSFuelFramework.AddMoney(player, account, amount, reason) == true
 end
 
 local function paymentAccountAllowed(account)
@@ -239,7 +225,7 @@ local function emergencyDiscount(player, vehicleClass)
     local cfg = PSFuelConfig.EmergencyDiscount or {}
     if cfg.Enabled ~= true or not player or not player.PlayerData then return 0 end
 
-    local job = player.PlayerData.job or {}
+    local job = PSFuelFramework.GetJob(player)
     if not cfg.Jobs or cfg.Jobs[job.name] ~= true then return 0 end
     if cfg.OnDutyOnly == true and job.onduty ~= true then return 0 end
 
@@ -1212,9 +1198,12 @@ do
     local canConfig = PSFuelConfig.JerryCan or {}
     if canConfig.Enabled == true and type(canConfig.Item) == 'string' and canConfig.Item ~= '' then
         local ok, err = pcall(function()
-            exports.qbx_core:CreateUseableItem(canConfig.Item, function(src)
+            local registered = PSFuelFramework.RegisterUsableItem(canConfig.Item, function(src)
                 TriggerClientEvent('ps-fuel:client:useJerryCan', src)
             end)
+            if not registered then
+                error(('no usable-item adapter for framework %s'):format(PSFuelFramework.GetName()))
+            end
         end)
         if not ok then
             print(('[ps-fuel] Failed to register usable item %s: %s'):format(canConfig.Item, tostring(err)))
@@ -1234,7 +1223,7 @@ lib.callback.register('ps-fuel:server:authoriseLeakRepair', function(src, netId)
         or IsPlayerAceAllowed(src, PSFuelConfig.AdminAce or 'ps-fuel.admin')
 
     if not permitted then
-        local job = player.PlayerData and player.PlayerData.job or {}
+        local job = PSFuelFramework.GetJob(player)
         local required = leaks.RepairJobs and leaks.RepairJobs[job.name]
         local grade = tonumber(job.grade and (job.grade.level or job.grade.grade) or job.grade) or 0
         permitted = required ~= nil and grade >= (tonumber(required) or 0)
@@ -1330,7 +1319,9 @@ end)
 -- Recoil Fuel 3.0 premium systems
 local function premiumPlayerName(player)
     local c = player and player.PlayerData and player.PlayerData.charinfo or {}
-    return (((c.firstname or '') .. ' ' .. (c.lastname or '')):gsub('^%s*(.-)%s*$', '%1'))
+    local name = (((c.firstname or '') .. ' ' .. (c.lastname or '')):gsub('^%s*(.-)%s*$', '%1'))
+    if name == '' then name = tostring(player and player.PlayerData and player.PlayerData.name or 'Unknown') end
+    return name
 end
 
 local function premiumUnitPrice(station, electric, fuelType)
@@ -1405,7 +1396,7 @@ lib.callback.register('ps-fuel:server:startDelivery', function(src, stationId)
     end
 
     if PSFuelConfig.Deliveries.RequiredJob
-        and player.PlayerData.job.name ~= PSFuelConfig.Deliveries.RequiredJob
+        and PSFuelFramework.GetJob(player).name ~= PSFuelConfig.Deliveries.RequiredJob
     then
         return {
             success = false,
@@ -1726,9 +1717,7 @@ lib.callback.register('ps-fuel:server:startRobbery', function(src, stationId)
     end
     if activeRobberies[src] then return { success = false, message = 'You already have an active robbery.' } end
 
-    local policeCount = 0
-    local ok, count = pcall(function() return exports.qbx_core:GetDutyCountType('leo') end)
-    if ok then policeCount = tonumber(count) or 0 end
+    local policeCount = PSFuelFramework.GetDutyCount('leo')
     if policeCount < (tonumber(PSFuelConfig.Robberies.RequiredPolice) or 0) then
         return { success = false, message = 'There are not enough police on duty.' }
     end

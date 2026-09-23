@@ -23,32 +23,8 @@ local function ensureIndex(tableName, indexName, columns)
     end
 end
 
-local function importSchema()
-    local sql = LoadResourceFile(GetCurrentResourceName(), 'install/ps-fuel.sql')
-    if not sql or sql == '' then
-        error('install/ps-fuel.sql could not be loaded')
-    end
-
-    sql = sql:gsub('/%*.-%*/', '')
-    sql = sql:gsub('%-%-[^\r\n]*', '')
-
-    local imported = 0
-    for statement in sql:gmatch('([^;]+);') do
-        statement = statement:match('^%s*(.-)%s*$')
-        if statement and statement ~= '' then
-            MySQL.query.await(statement)
-            imported = imported + 1
-        end
-    end
-
-    if imported == 0 then
-        error('install/ps-fuel.sql did not contain any executable statements')
-    end
-end
-
 function PSFuelDatabase.Audit(action, source, citizenid, details)
     if PSFuelDatabase.Ready ~= true or (PSFuelConfig.Logging or {}).DatabaseAudit ~= true then return end
-
     local encoded = type(details) == 'string' and details or json.encode(details or {})
     MySQL.insert([[INSERT INTO ps_fuel_audit_logs (action, source, citizenid, details)
         VALUES (?, ?, ?, ?)]], {
@@ -59,17 +35,141 @@ function PSFuelDatabase.Audit(action, source, citizenid, details)
     })
 end
 
+
+local function standaloneWalletDefaults()
+    local cfg = (PSFuelConfig.Framework or {}).Standalone or {}
+    return math.max(0, math.floor(tonumber(cfg.StartingCash) or 50000)),
+        math.max(0, math.floor(tonumber(cfg.StartingBank) or 100000))
+end
+
+function PSFuelDatabase.GetWalletBalances(identifier)
+    if not PSFuelDatabase.Ready or not identifier then return {} end
+    local cash, bank = standaloneWalletDefaults()
+    MySQL.insert.await([[INSERT IGNORE INTO ps_fuel_wallets (identifier, cash, bank) VALUES (?, ?, ?)]],
+        { tostring(identifier), cash, bank })
+    return MySQL.single.await('SELECT cash, bank FROM ps_fuel_wallets WHERE identifier = ?', { tostring(identifier) }) or {}
+end
+
+function PSFuelDatabase.GetWalletBalance(identifier, account)
+    if not identifier then return 0 end
+    local balances = PSFuelDatabase.GetWalletBalances(identifier)
+    return tonumber(balances[tostring(account or 'bank'):lower()]) or 0
+end
+
+function PSFuelDatabase.RemoveWalletMoney(identifier, account, amount)
+    if not identifier then return false end
+    account = tostring(account or 'bank'):lower()
+    if account ~= 'cash' and account ~= 'bank' then return false end
+    amount = math.max(0, math.floor(tonumber(amount) or 0))
+    local affected = MySQL.update.await(
+        ('UPDATE ps_fuel_wallets SET `%s` = `%s` - ? WHERE identifier = ? AND `%s` >= ?'):format(account, account, account),
+        { amount, tostring(identifier), amount }
+    )
+    return affected and affected > 0 or amount == 0
+end
+
+function PSFuelDatabase.AddWalletMoney(identifier, account, amount)
+    if not identifier then return false end
+    account = tostring(account or 'bank'):lower()
+    if account ~= 'cash' and account ~= 'bank' then return false end
+    amount = math.max(0, math.floor(tonumber(amount) or 0))
+    local cash, bank = standaloneWalletDefaults()
+    MySQL.insert.await([[INSERT IGNORE INTO ps_fuel_wallets (identifier, cash, bank) VALUES (?, ?, ?)]],
+        { tostring(identifier), cash, bank })
+    local affected = MySQL.update.await(
+        ('UPDATE ps_fuel_wallets SET `%s` = `%s` + ? WHERE identifier = ?'):format(account, account),
+        { amount, tostring(identifier) }
+    )
+    return affected and affected > 0 or amount == 0
+end
+
 function PSFuelDatabase.Ensure()
     local ok, err = pcall(function()
-        importSchema()
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_vehicles` (
+            `plate` varchar(16) NOT NULL,
+            `fuel` decimal(6,2) NOT NULL DEFAULT 100.00,
+            `leak_level` tinyint unsigned NOT NULL DEFAULT 0,
+            `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`plate`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
+
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_stations` (
+            `station_id` varchar(64) NOT NULL,
+            `label` varchar(100) NOT NULL,
+            `owner_citizenid` varchar(64) DEFAULT NULL,
+            `owner_name` varchar(100) DEFAULT NULL,
+            `balance` bigint NOT NULL DEFAULT 0,
+            `price_multiplier` decimal(4,2) NOT NULL DEFAULT 1.00,
+            `total_sales` bigint NOT NULL DEFAULT 0,
+            `total_litres` decimal(12,2) NOT NULL DEFAULT 0.00,
+            `stock` decimal(12,2) NOT NULL DEFAULT 10000.00,
+            `capacity` decimal(12,2) NOT NULL DEFAULT 10000.00,
+            PRIMARY KEY (`station_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
+
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_transactions` (
+            `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+            `station_id` varchar(64) NOT NULL,
+            `citizenid` varchar(64) DEFAULT NULL,
+            `player_name` varchar(100) DEFAULT NULL,
+            `amount_paid` int NOT NULL DEFAULT 0,
+            `fuel_amount` decimal(8,2) NOT NULL DEFAULT 0.00,
+            `transaction_type` varchar(32) NOT NULL DEFAULT 'fuel',
+            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `idx_station_created` (`station_id`,`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
+
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_settings` (
+            `setting_key` varchar(64) NOT NULL,
+            `setting_value` varchar(255) NOT NULL,
+            PRIMARY KEY (`setting_key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
+
+
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_audit_logs` (
+            `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+            `action` varchar(64) NOT NULL,
+            `source` int NOT NULL DEFAULT 0,
+            `citizenid` varchar(64) DEFAULT NULL,
+            `details` longtext DEFAULT NULL,
+            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `idx_ps_fuel_audit_action_created` (`action`,`created_at`),
+            KEY `idx_ps_fuel_audit_citizen` (`citizenid`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
+
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_vehicle_profiles` (
+            `model_hash` bigint NOT NULL,
+            `model_name` varchar(80) NOT NULL,
+            `fuel_type` varchar(16) NOT NULL DEFAULT 'petrol',
+            `fast_charge_enabled` tinyint(1) NOT NULL DEFAULT 0,
+            `updated_by` varchar(64) DEFAULT NULL,
+            `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`model_hash`),
+            KEY `idx_ps_fuel_vehicle_type` (`fuel_type`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
+
+        MySQL.query.await([[CREATE TABLE IF NOT EXISTS `ps_fuel_wallets` (
+            `identifier` varchar(128) NOT NULL,
+            `cash` bigint NOT NULL DEFAULT 0,
+            `bank` bigint NOT NULL DEFAULT 0,
+            `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (`identifier`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci]])
 
         ensureColumn('ps_fuel_vehicles', 'leak_level', 'tinyint unsigned NOT NULL DEFAULT 0')
         ensureColumn('ps_fuel_stations', 'stock', 'decimal(12,2) NOT NULL DEFAULT 10000.00')
         ensureColumn('ps_fuel_stations', 'capacity', 'decimal(12,2) NOT NULL DEFAULT 10000.00')
-
         ensureIndex('ps_fuel_vehicles', 'idx_ps_fuel_vehicles_updated', '`updated_at`')
         ensureIndex('ps_fuel_stations', 'idx_ps_fuel_stations_owner', '`owner_citizenid`')
         ensureIndex('ps_fuel_transactions', 'idx_ps_fuel_transactions_citizen', '`citizenid`,`created_at`')
+
+        MySQL.query.await([[
+            INSERT INTO ps_fuel_settings (setting_key, setting_value)
+            VALUES ('market_multiplier', '1.0')
+            ON DUPLICATE KEY UPDATE setting_key = VALUES(setting_key)
+        ]])
     end)
 
     if not ok then
@@ -79,6 +179,6 @@ function PSFuelDatabase.Ensure()
     end
 
     PSFuelDatabase.Ready = true
-    print('[ps-fuel] Database ready.')
+    print('[ps-fuel] Database ready. Standalone fuel system active.')
     return true
 end

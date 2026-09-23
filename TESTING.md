@@ -2,7 +2,7 @@
 
 ## Startup
 
-- Start `qbx_core`, `ox_lib`, `oxmysql` and `ox_target` first.
+- Start `ox_lib`, `oxmysql` and `ox_target` first. If using Qbox, QBCore or ESX, start that framework before `ps-fuel`.
 - Confirm `[ps-fuel] Database ready. Standalone fuel system active.` appears.
 - Confirm `ps_fuel_vehicle_profiles` is created automatically.
 - Confirm no missing NUI, electric model or callback errors appear.

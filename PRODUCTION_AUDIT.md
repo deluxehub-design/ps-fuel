@@ -1,4 +1,4 @@
-# PS Fuel 3.2.0 production audit
+# PS Fuel 3.3.0 production audit
 
 ## Release blockers fixed
 
@@ -24,7 +24,6 @@
 
 ## Still required before commercial release
 
-Run the complete `TESTING.md` checklist on a staging FiveM server with your exact
-Qbox, ox_inventory and banking setup. Static validation cannot prove native,
-network ownership, rope physics, target placement or payment behaviour under a
-real multi-player OneSync session.
+Run the complete `TESTING.md` checklist on staging servers covering Qbox, QBCore, ESX and standalone/vMenu modes. Static validation cannot prove native, network ownership, rope physics, target placement or payment behaviour under a real multi-player OneSync session.
+
+The framework bridge should also be tested with the server's actual inventory and banking resources.

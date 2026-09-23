@@ -68,15 +68,7 @@ AddEventHandler('onResourceStop', function(resourceName)
     SetNuiFocusKeepInput(false)
 end)
 
-RegisterNetEvent('qbx_core:client:playerLoggedOut', function()
-    forceCloseUi()
-end)
-
-RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
-    forceCloseUi()
-end)
-
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+RegisterNetEvent('ps-fuel:client:frameworkReset', function()
     forceCloseUi()
 end)
 
@@ -1384,6 +1376,7 @@ PSFuelRuntime.OpenRefuelPanel = openRefuelPanel
 PSFuelRuntime.RefuelVehicle = refuelVehicle
 PSFuelRuntime.IsRefuelling = function() return isRefuelling end
 PSFuelRuntime.CloseFuelUi = function(silent) forceCloseUi(false, silent == true, false) end
+PSFuelRuntime.Reset = function() forceCloseUi(false, true, false) end
 PSFuelRuntime.PlaySound = function(name, volume, looped)
     sendFuelNui({
         action = 'psFuelSound',

@@ -31,7 +31,6 @@
   };
   const close = () => {
     root.classList.remove('visible');
-    root.removeAttribute('data-mode');
     root.setAttribute('aria-hidden', 'true');
     post('fuelClose');
   };
@@ -51,49 +50,33 @@
 
   function refuelView(includeHeader = true) {
     if (!state.vehicle) return `<article class="card empty"><div><strong>No vehicle detected</strong><p>Park beside a pump to select a fuel type.</p></div></article>`;
-
     const valid = fuelTypes().filter((fuel) => allowed().has(fuel.id));
     if (!selectedFuel || !allowed().has(selectedFuel)) selectedFuel = valid[0]?.id || null;
-
     const fuel = chosen();
     const current = Number(state.vehicle.fuel) || 0;
-    const fuelButtons = fuelTypes().map((item) => {
-      const enabled = allowed().has(item.id);
-      return `<button class="fuel-type ${selectedFuel === item.id ? 'selected' : ''} ${enabled ? '' : 'disabled'}" data-fuel="${esc(item.id)}" ${enabled ? '' : 'disabled'} style="--fuel-accent:${esc(item.accent || '#1ee8ef')}"><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small><div class="fuel-price">${money(item.unitPrice)} / 1%</div></button>`;
-    }).join('');
-
-    if (includeHeader) {
-      return `<div class="compact-refuel">
-        <div class="compact-title"><div><p class="eyebrow">${esc(state.label || 'Fuel station')}</p><h1>Select fuel</h1></div><span class="badge">${state.vehicle.electric ? 'EV' : state.vehicle.diesel ? 'Diesel' : 'Petrol'}</span></div>
-        <article class="card vehicle-card compact-vehicle">
-          <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><strong class="compact-fuel-value">${number(current,1)}%</strong></div>
-          <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div></div>
-        </article>
-        <div class="fuel-types compact-fuel-types">${fuelButtons}</div>
-        <div class="compact-summary"><span>${esc(fuel.label)}</span><strong>${money(fuel.unitPrice)} / 1%</strong></div>
-        <button class="primary wide compact-select" id="select-fuel" ${!selectedFuel || current >= (Number(state.vehicle.maxFuel) || 100) ? 'disabled' : ''}>SELECT ${esc(String(fuel.label || 'FUEL').toUpperCase())}</button>
-      </div>`;
-    }
-
-    return `<div class="fuel-layout">
-      <div>
-        <article class="card vehicle-card">
-          <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle')}</span></div>
-          <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div><div class="gauge-value">${number(current,1)}%</div></div>
-        </article>
-        <div class="fuel-types">${fuelButtons}</div>
-      </div>
-      <article class="card amount-panel">
-        <div class="section-title"><h2>Physical pump control</h2><span>Step 1 of 2</span></div>
-        <div class="summary">
-          <div class="summary-row"><span>Selected fuel</span><strong>${esc(fuel.label)}</strong></div>
-          <div class="summary-row"><span>${state.vehicle.electric ? 'Battery charge' : 'Current fuel'}</span><strong>${number(current,1)}%</strong></div>
-          <div class="summary-row"><span>Unit rate</span><strong>${money(fuel.unitPrice)} / 1%</strong></div>
+    return `${includeHeader ? pageHeader('Select fuel type', `${state.label || 'Fuel station'} · choose the correct fuel before using the pump`, 'Pump ready') : ''}
+      <div class="fuel-layout">
+        <div>
+          <article class="card vehicle-card">
+            <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle')}</span></div>
+            <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div><div class="gauge-value">${number(current,1)}%</div></div>
+          </article>
+          <div class="fuel-types">${fuelTypes().map((item) => {
+            const enabled = allowed().has(item.id);
+            return `<button class="fuel-type ${selectedFuel === item.id ? 'selected' : ''} ${enabled ? '' : 'disabled'}" data-fuel="${esc(item.id)}" ${enabled ? '' : 'disabled'} style="--fuel-accent:${esc(item.accent || '#1ee8ef')}"><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small><div class="fuel-price">${money(item.unitPrice)} / 1%</div></button>`;
+          }).join('')}</div>
         </div>
-        <p class="pump-help">${state.physicalNozzle ? `The connected ${state.vehicle.electric ? 'charging connector' : 'fuel nozzle'} will start automatically after selection. Live progress appears above the vehicle.` : 'Selecting a fuel type closes the terminal. Insert the nozzle into the vehicle to begin; live progress appears above it.'}</p>
-        <button class="primary wide" id="select-fuel" ${!selectedFuel || current >= (Number(state.vehicle.maxFuel) || 100) ? 'disabled' : ''}>SELECT ${esc(String(fuel.label || 'FUEL').toUpperCase())}</button>
-      </article>
-    </div>`;
+        <article class="card amount-panel">
+          <div class="section-title"><h2>Physical pump control</h2><span>Step 1 of 2</span></div>
+          <div class="summary">
+            <div class="summary-row"><span>Selected fuel</span><strong>${esc(fuel.label)}</strong></div>
+            <div class="summary-row"><span>${state.vehicle.electric ? 'Battery charge' : 'Current fuel'}</span><strong>${number(current,1)}%</strong></div>
+            <div class="summary-row"><span>Unit rate</span><strong>${money(fuel.unitPrice)} / 1%</strong></div>
+          </div>
+          <p style="color:var(--muted);font-size:10px;line-height:1.7;margin:16px 0">${state.physicalNozzle ? `The connected ${state.vehicle.electric ? 'charging connector' : 'fuel nozzle'} will start automatically after selection. Live progress appears above the vehicle.` : 'Selecting a fuel type closes the terminal. Insert the nozzle into the vehicle to begin; live progress appears above it.'}</p>
+          <button class="primary wide" id="select-fuel" ${!selectedFuel || current >= (Number(state.vehicle.maxFuel) || 100) ? 'disabled' : ''}>SELECT ${esc(String(fuel.label || 'FUEL').toUpperCase())}</button>
+        </article>
+      </div>`;
   }
 
   function overviewView() {
@@ -110,7 +93,7 @@
 
   function ledgerView() {
     const rows = Array.isArray(state.transactions) ? state.transactions : [];
-    return `${pageHeader(state.label || 'Fuel station','Latest station transactions and operational records','Live ledger')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['ledger','Ledger']])}<article class="card"><div class="section-title"><h2>Recent transactions</h2><span>${rows.length} records</span></div><div class="transactions">${rows.length ? rows.map((row) => `<div class="transaction"><div><strong>${esc(String(row.transaction_type || 'transaction').replace(/_/g, ' ').toUpperCase())}</strong><small>${esc(row.player_name || 'System')} · ${esc(row.created_at || '')}</small></div><span>${number(row.fuel_amount,1)}%</span><span class="amount">${money(row.amount_paid)}</span></div>`).join('') : '<div class="empty">No transactions have been recorded.</div>'}</div></article>`;
+    return `${pageHeader(state.label || 'Fuel station','Latest station transactions and operational records','Live ledger')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['ledger','Ledger']])}<article class="card"><div class="section-title"><h2>Recent transactions</h2><span>${rows.length} records</span></div><div class="transactions">${rows.length ? rows.map((row) => `<div class="transaction"><div><strong>${esc(String(row.transaction_type || 'transaction').replaceAll('_',' ').toUpperCase())}</strong><small>${esc(row.player_name || 'System')} · ${esc(row.created_at || '')}</small></div><span>${number(row.fuel_amount,1)}%</span><span class="amount">${money(row.amount_paid)}</span></div>`).join('') : '<div class="empty">No transactions have been recorded.</div>'}</div></article>`;
   }
 
   function adminView() {
@@ -154,18 +137,8 @@
     document.getElementById('start-robbery')?.addEventListener('click', async () => {const response=await post('startRobbery',{stationId:state.id});toast(response?.message || (response?.success?'Security event started.':'Action failed.'),response?.success?'success':'error');});
   }
   async function refreshStation(){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;toast('Station data synchronised.','success');render();}else toast(response?.message||'Refresh failed.','error');}
-  function open(payload) {
-    mode = payload.mode || 'refuel';
-    state = payload.data || {};
-    activeTab = 'overview';
-    const valid = fuelTypes().filter((fuel) => (state.vehicle?.allowedFuelTypes || []).includes(fuel.id));
-    selectedFuel = valid[0]?.id || null;
-    root.dataset.mode = mode;
-    root.classList.add('visible');
-    root.setAttribute('aria-hidden', 'false');
-    render();
-  }
-  window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='reset'){root.classList.remove('visible');root.removeAttribute('data-mode');root.setAttribute('aria-hidden','true');}});
+  function open(payload){mode=payload.mode||'refuel';state=payload.data||{};activeTab='overview';const valid=fuelTypes().filter((fuel)=>(state.vehicle?.allowedFuelTypes||[]).includes(fuel.id));selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
+  window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='reset'){root.classList.remove('visible');root.setAttribute('aria-hidden','true');}});
   document.getElementById('close-button').addEventListener('click',close);
   document.addEventListener('keydown',(event)=>{if(event.key==='Escape')close();});
   setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});},1000);

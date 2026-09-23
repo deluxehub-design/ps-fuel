@@ -2,6 +2,27 @@ PSFuelConfig = {}
 
 PSFuelConfig.Debug = false
 
+-- Framework adapter.
+-- auto detects Qbox, QBCore and ESX. vMenu and servers without a framework
+-- automatically use the built-in standalone wallet.
+PSFuelConfig.Framework = {
+    Name = 'auto', -- auto, qbox, qbcore, esx, standalone, vmenu, custom
+    IdentifierType = 'license',
+
+    -- Standalone/vMenu economy. These balances are stored by player identifier
+    -- in ps_fuel_wallets and are only used when no framework economy is active.
+    Standalone = {
+        StartingCash = 50000,
+        StartingBank = 100000,
+    },
+
+    -- Logical job groups used by framework adapters.
+    -- `leo` is used by the robbery system; add your own police/sheriff jobs here.
+    DutyJobs = {
+        leo = { 'police', 'sheriff', 'sast', 'lspd', 'bcso', 'sasp', 'trooper' },
+    },
+}
+
 PSFuelConfig.Locale = 'en'
 
 -- Public-release security and maintenance defaults.

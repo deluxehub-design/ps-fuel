@@ -4,14 +4,15 @@ game 'gta5'
 name 'ps-fuel'
 author 'PS Development / Techy / PLUUUX Solutions'
 description 'Standalone physical fuel and EV charging system with runtime vehicle profiles, fast charging, stations and ownership'
-version '3.2.2'
+version '3.3.0'
 
 
 ui_page 'web/index.html'
 
 shared_scripts {
     '@ox_lib/init.lua',
-    'config.lua'
+    'config.lua',
+    'bridge/framework/client.lua'
 }
 
 client_scripts {
@@ -20,8 +21,8 @@ client_scripts {
 }
 
 server_scripts {
-    'version.lua',
     '@oxmysql/lib/MySQL.lua',
+    'bridge/framework/server.lua',
     'server/security.lua',
     'server/inventory.lua',
     'server/database.lua',
@@ -44,7 +45,6 @@ provide 'cdn-fuel'
 provide 'LegacyFuel'
 
 dependencies {
-    'qbx_core',
     'ox_lib',
     'oxmysql',
     'ox_target',

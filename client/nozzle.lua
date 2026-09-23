@@ -644,7 +644,7 @@ if (PSFuelConfig.Safety or {}).LeaveEngineRunning then
     end)
 end
 
-RegisterNetEvent('qbx_core:client:playerLoggedOut', function()
+RegisterNetEvent('ps-fuel:client:frameworkReset', function()
     returnNozzle(true, true)
 end)
 

@@ -4,6 +4,11 @@ local function oxInventoryAvailable()
     return GetResourceState('ox_inventory') == 'started'
 end
 
+local function frameworkPlayer(source, player)
+    if player then return player end
+    return PSFuelFramework and PSFuelFramework.GetPlayer and PSFuelFramework.GetPlayer(source)
+end
+
 function PSFuelInventory.AddItem(source, player, item, count, metadata)
     if oxInventoryAvailable() then
         if not exports.ox_inventory:CanCarryItem(source, item, count, metadata) then
@@ -12,12 +17,22 @@ function PSFuelInventory.AddItem(source, player, item, count, metadata)
         return exports.ox_inventory:AddItem(source, item, count, metadata)
     end
 
-    if not player or not player.Functions or not player.Functions.AddItem then
-        return false, 'inventory_unavailable'
+    player = frameworkPlayer(source, player)
+    local raw = player and player.raw
+
+    -- Qbox/QBCore compatible inventory API.
+    if player and player.Functions and player.Functions.AddItem then
+        local result = player.Functions.AddItem(item, count, false, metadata)
+        return result ~= false, result == false and 'inventory_full' or nil
     end
 
-    local result = player.Functions.AddItem(item, count, false, metadata)
-    return result ~= false, result == false and 'inventory_full' or nil
+    -- ESX inventory API.
+    if raw and raw.addInventoryItem then
+        raw.addInventoryItem(item, count)
+        return true
+    end
+
+    return false, 'inventory_unavailable'
 end
 
 function PSFuelInventory.ConsumeOne(source, player, item)
@@ -41,14 +56,24 @@ function PSFuelInventory.ConsumeOne(source, player, item)
         return removed == true, selected.metadata or {}, reason
     end
 
-    if not player or not player.Functions or not player.Functions.GetItemByName then
-        return false, nil, 'inventory_unavailable'
+    player = frameworkPlayer(source, player)
+    local raw = player and player.raw
+
+    if player and player.Functions and player.Functions.GetItemByName then
+        local found = player.Functions.GetItemByName(item)
+            or player.Functions.GetItemByName(item:upper())
+        if not found then return false, nil, 'item_missing' end
+
+        local removed = player.Functions.RemoveItem(found.name, 1, found.slot)
+        return removed ~= false, found.info or found.metadata or {}, removed == false and 'remove_failed' or nil
     end
 
-    local found = player.Functions.GetItemByName(item)
-        or player.Functions.GetItemByName(item:upper())
-    if not found then return false, nil, 'item_missing' end
+    if raw and raw.getInventoryItem and raw.removeInventoryItem then
+        local found = raw.getInventoryItem(item)
+        if not found or tonumber(found.count) <= 0 then return false, nil, 'item_missing' end
+        raw.removeInventoryItem(item, 1)
+        return true, found.metadata or found.info or {}, nil
+    end
 
-    local removed = player.Functions.RemoveItem(found.name, 1, found.slot)
-    return removed ~= false, found.info or found.metadata or {}, removed == false and 'remove_failed' or nil
+    return false, nil, 'inventory_unavailable'
 end

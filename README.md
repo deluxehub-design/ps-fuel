@@ -1,4 +1,4 @@
-# PS Fuel 3.2.2
+# PS Fuel 3.3.0 — Universal Framework Release
 
 This is the Fuel Network separated from `ps-tablet`. It does not require the tablet and includes its own FuelOS station-management and fuel-selection NUI.
 
@@ -27,38 +27,93 @@ This is the Fuel Network separated from `ps-tablet`. It does not require the tab
 - Atomic station withdrawals and database audit logging
 - Included petrol and EV sound assets (no missing NUI audio files)
 
-## Required resources
+## Framework Support
+
+PS Fuel 3.3.0 uses a framework bridge so the fuel, station, EV, delivery, robbery, persistence and pricing systems are not hard-wired to Qbox.
+
+Supported modes:
+
+- Qbox
+- QBCore
+- ESX Legacy
+- Standalone
+- vMenu / Standalone mode
+- Custom framework adapters
+
+Framework detection is automatic by default. You can force a mode in `config.lua`:
+
+```lua
+PSFuelConfig.Framework = {
+    Name = 'auto', -- auto, qbox, qbcore, esx, standalone, vmenu, custom
+    IdentifierType = 'license',
+}
+```
+
+`auto` checks for Qbox, QBCore and ESX, then falls back to the built-in standalone wallet.
+
+### Required resources
 
 ```cfg
 ensure ox_lib
 ensure oxmysql
-ensure qbx_core
 ensure ox_target
 ensure ps-fuel
 ```
+
+Qbox, QBCore or ESX are only required when that framework mode is being used. PS Fuel no longer declares `qbx_core` as a hard manifest dependency.
 
 OneSync is required and declared in the manifest.
 
 Do not start the donor `cdn-fuel` or another `ps-fuel` at the same time.
 
+## Universal Framework Bridge
+
+The bridge normalises the framework services PS Fuel needs:
+
+- Player lookup
+- Player identifier
+- Player name
+- Jobs and grades
+- On-duty state
+- Bank/cash balances
+- Money removal and payouts
+- Police/on-duty counting
+- Usable items
+- Standalone wallet support
+
+External vehicle resources can continue to use the compatibility exports introduced in v3.2.2. The framework bridge is separate from the vehicle fuel synchronization layer.
+
+### Standalone / vMenu economy
+
+When no supported framework is running, PS Fuel creates `ps_fuel_wallets` and gives new identifiers the configured starting balances:
+
+```lua
+PSFuelConfig.Framework.Standalone = {
+    StartingCash = 50000,
+    StartingBank = 100000,
+}
+```
+
+These balances are only used by the standalone adapter; Qbox/QBCore/ESX money is never duplicated into the PS Fuel wallet.
+
+### Custom framework adapter
+
+Advanced servers can register a custom adapter with the exported `SetFrameworkAdapter` function. The adapter can implement `GetPlayer`, `GetMoney`, `RemoveMoney`, `AddMoney`, `GetDutyCount`, and `RegisterUsableItem`.
+
+```lua
+exports['ps-fuel']:SetFrameworkAdapter({
+    GetPlayer = function(source) ... end,
+    GetMoney = function(player, account) ... end,
+    RemoveMoney = function(player, account, amount, reason) ... end,
+    AddMoney = function(player, account, amount, reason) ... end,
+    GetDutyCount = function(jobType) ... end,
+    RegisterUsableItem = function(item, handler) ... end,
+})
+```
+
 ## Database
 
-On startup, the resource automatically loads `install/ps-fuel.sql`, creates any missing `ps_fuel_*` tables, and applies compatibility migrations for existing installations. No manual SQL import is required.
-
-
-## Version checker
-
-`version.lua` handles update checks without adding version logic to the main server files. The installed version is read from `fxmanifest.lua`.
-
-The default update repository is `deluxehub-evolvenetwork/ps-fuel`, so no `server.cfg` entry is required.
-
-The checker runs shortly after startup and then every six hours. You can change the interval with `ps_fuel_version_check_hours` or run `psfuelversion` from the server console for an immediate check. If GitHub cannot be reached, the fuel resource continues running normally.
-
-If the project is ever forked or moved, the repository can be overridden with:
-
-```cfg
-set ps_fuel_github_repo "OWNER/REPOSITORY"
-```
+The resource automatically creates and upgrades its `ps_fuel_*` tables, including `ps_fuel_vehicle_profiles`. Existing data from the tablet-integrated version is reused. No manual SQL import is required. A manual SQL file remains available at `install/ps-fuel.sql`.
 
 ## Commands
 
@@ -164,7 +219,7 @@ The imported donor assets and behaviours retain their GPL notices in `licenses/`
 
 ## TGIANN, JG and custom-script compatibility
 
-Version 3.2.2 keeps the GTA native fuel level, `_FUEL_LEVEL` decorator, `recoilFuel` statebag and the generic `fuel` statebag synchronized. External changes made through any of those common paths are reconciled back into ps-fuel's cache and persistence layer.
+Version 3.2.1 keeps the GTA native fuel level, `_FUEL_LEVEL` decorator, `recoilFuel` statebag and the generic `fuel` statebag synchronized. External changes made through any of those common paths are reconciled back into ps-fuel's cache and persistence layer.
 
 JG resources can use `Config.FuelSystem = "ps-fuel"` and call the standard `GetFuel` / `SetFuel` exports. TGIANN/custom resources that write `SetVehicleFuelLevel` and `_FUEL_LEVEL` are also detected. For new custom resources, prefer the ps-fuel exports because they update persistence and engine-empty state immediately.
 
