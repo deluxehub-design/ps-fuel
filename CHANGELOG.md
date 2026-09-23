@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.2.2
+
+- Fixed vehicles remaining undriveable after refuelling from empty.
+- Added explicit empty-fuel state cleanup and network-control recovery.
+- Added bidirectional native/decorator/statebag fuel synchronization for TGIANN, JG, LS Trucker Simulator and custom resources.
+- Added lowercase, AddFuel/RemoveFuel and vehicle fuel compatibility exports plus set/add fuel events.
+- Kept `fuel`, `recoilFuel`, `_FUEL_LEVEL` and GTA native fuel values synchronized.
+- Added a server-side GitHub release version checker.
+- The checker reads the installed version directly from `fxmanifest.lua`.
+- Added automatic update notices when a newer GitHub release is available.
+- Added a configurable GitHub repository target and `ps_fuel_github_repo` server convar override.
+- Added the `psfuelversion` server-console command for manual version checks.
+- Version checks fail safely and never stop or restart the resource when GitHub is unavailable.
+
+## 3.2.1
+
+- Previous release baseline.
+
 ## 3.2.0 — Production Release
 
 - Added the missing petrol and EV sound files referenced by the NUI.

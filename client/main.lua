@@ -1,6 +1,6 @@
 PSFuelRuntime = PSFuelRuntime or {}
 
-local fuelCache, dirtyFuel, leakCache = {}, {}, {}
+local fuelCache, dirtyFuel, leakCache, lastAppliedFuel, fuelForcedShutdown = {}, {}, {}, {}, {}
 local isRefuelling, uiOpen, activeDelivery = false, false, nil
 local activeFuelSession = nil
 local selectedPumpFuel = nil
@@ -203,10 +203,125 @@ local function isElectricFuelType(fuelType)
     return fuelType == 'electric' or fuelType == 'electric_fast'
 end
 
+local function clampFuel(value)
+    return math.max(0.0, math.min(tonumber(PSFuelConfig.MaxFuel) or 100.0, tonumber(value) or 0.0))
+end
+
+local function requestVehicleControl(vehicle, timeout)
+    if not DoesEntityExist(vehicle) then return false end
+    if not NetworkGetEntityIsNetworked(vehicle) or NetworkHasControlOfEntity(vehicle) then return true end
+
+    local deadline = GetGameTimer() + (tonumber(timeout) or 750)
+    repeat
+        NetworkRequestControlOfEntity(vehicle)
+        Wait(0)
+    until NetworkHasControlOfEntity(vehicle) or GetGameTimer() >= deadline
+
+    return NetworkHasControlOfEntity(vehicle)
+end
+
+local function setFuelStateBags(vehicle, fuel, empty)
+    local compatibility = PSFuelConfig.Compatibility or {}
+    if compatibility.SyncFuelStateBag == false then return end
+
+    local state = Entity(vehicle).state
+    local stateName = tostring(compatibility.FuelStateBag or 'fuel')
+    local tolerance = math.max(0.01, tonumber(compatibility.ExternalWriteTolerance) or 0.15)
+
+    if math.abs((tonumber(state.recoilFuel) or -9999.0) - fuel) > tolerance then
+        pcall(function() state:set('recoilFuel', fuel + 0.0, true) end)
+    end
+    if math.abs((tonumber(state[stateName]) or -9999.0) - fuel) > tolerance then
+        pcall(function() state:set(stateName, fuel + 0.0, true) end)
+    end
+    if empty ~= nil and state.psFuelEmpty ~= (empty == true) then
+        pcall(function() state:set('psFuelEmpty', empty == true, true) end)
+    end
+end
+
+local function applyFuelValue(vehicle, fuel, replicateState)
+    fuel = clampFuel(fuel)
+    SetVehicleFuelLevel(vehicle, fuel + 0.0)
+    if fuelDecorEnabled() then DecorSetFloat(vehicle, fuelDecor, fuel + 0.0) end
+
+    local plate = trimPlate(vehicle)
+    if plate ~= '' then lastAppliedFuel[plate] = fuel end
+
+    if replicateState ~= false then
+        local shutOffLevel = math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
+        setFuelStateBags(vehicle, fuel, fuel <= shutOffLevel)
+    end
+
+    return fuel
+end
+
+local function restoreFuelDriveability(vehicle, fuel, autoStart)
+    if not DoesEntityExist(vehicle) then return end
+    local shutOffLevel = math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
+    if clampFuel(fuel) <= shutOffLevel then return end
+
+    requestVehicleControl(vehicle, 900)
+    local plate = trimPlate(vehicle)
+    local stateWasEmpty = Entity(vehicle).state.psFuelEmpty == true
+    if fuelForcedShutdown[plate] or stateWasEmpty then
+        SetVehicleUndriveable(vehicle, false)
+        fuelForcedShutdown[plate] = nil
+        setFuelStateBags(vehicle, clampFuel(fuel), false)
+
+        -- Empty-fuel shutdown uses disableAutoStart=true. Clear that latch so
+        -- the vehicle can start normally again after fuel is restored.
+        SetVehicleEngineOn(vehicle, false, true, false)
+
+        local safety = PSFuelConfig.Safety or {}
+        if autoStart == true and safety.AutoRestartAfterRefuel == true then
+            local ped = cache.ped or PlayerPedId()
+            if GetPedInVehicleSeat(vehicle, -1) == ped and GetVehicleEngineHealth(vehicle) > 0.0 then
+                SetVehicleEngineOn(vehicle, true, true, false)
+            end
+        end
+    end
+end
+
+local function reconcileExternalFuel(vehicle, plate)
+    local compatibility = PSFuelConfig.Compatibility or {}
+    if compatibility.SyncExternalWrites == false or not fuelCache[plate] then return end
+
+    local tolerance = math.max(0.01, tonumber(compatibility.ExternalWriteTolerance) or 0.15)
+    local baseline = tonumber(lastAppliedFuel[plate]) or tonumber(fuelCache[plate])
+    if baseline == nil then return end
+
+    local stateName = tostring(compatibility.FuelStateBag or 'fuel')
+    local stateFuel = tonumber(Entity(vehicle).state[stateName])
+    local decorFuel = nil
+    if fuelDecorEnabled() and DecorExistOn(vehicle, fuelDecor) then decorFuel = tonumber(DecorGetFloat(vehicle, fuelDecor)) end
+    local nativeFuel = tonumber(GetVehicleFuelLevel(vehicle))
+
+    local candidate = nil
+    if stateFuel and math.abs(stateFuel - baseline) > tolerance then
+        candidate = stateFuel
+    elseif decorFuel and math.abs(decorFuel - baseline) > tolerance then
+        candidate = decorFuel
+    elseif nativeFuel and math.abs(nativeFuel - baseline) > tolerance then
+        candidate = nativeFuel
+    end
+
+    if candidate == nil then return end
+
+    candidate = clampFuel(candidate)
+    local shutOffLevel = math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
+    if candidate > shutOffLevel and Entity(vehicle).state.psFuelEmpty == true then
+        fuelForcedShutdown[plate] = true
+    end
+    fuelCache[plate] = candidate
+    local netId = NetworkGetNetworkIdFromEntity(vehicle)
+    dirtyFuel[plate] = { fuel = candidate, netId = netId, leak = leakCache[plate] or 0 }
+    applyFuelValue(vehicle, candidate, true)
+end
+
 local function getFuel(vehicle)
     if not DoesEntityExist(vehicle) then return 0.0 end
     local plate = trimPlate(vehicle)
-    if plate == '' then return GetVehicleFuelLevel(vehicle) end
+    if plate == '' then return clampFuel(GetVehicleFuelLevel(vehicle)) end
 
     if fuelCache[plate] == nil then
         local saved = lib.callback.await('ps-fuel:server:getVehicleFuel', false, plate)
@@ -215,33 +330,69 @@ local function getFuel(vehicle)
         if startMaximum < startMinimum then startMinimum, startMaximum = startMaximum, startMinimum end
         startMinimum = math.max(0, math.min(math.floor(tonumber(PSFuelConfig.MaxFuel) or 100), startMinimum))
         startMaximum = math.max(startMinimum, math.min(math.floor(tonumber(PSFuelConfig.MaxFuel) or 100), startMaximum))
-        fuelCache[plate] = (type(saved) == 'table' and tonumber(saved.fuel) or tonumber(saved))
-            or (math.random(startMinimum, startMaximum) + 0.0)
+
+        local compatibility = PSFuelConfig.Compatibility or {}
+        local externalFuel = nil
+        if compatibility.PreferExternalFuelOnFirstSeen ~= false then
+            local stateName = tostring(compatibility.FuelStateBag or 'fuel')
+            externalFuel = tonumber(Entity(vehicle).state[stateName]) or tonumber(Entity(vehicle).state.recoilFuel)
+            if externalFuel == nil and fuelDecorEnabled() and DecorExistOn(vehicle, fuelDecor) then
+                externalFuel = tonumber(DecorGetFloat(vehicle, fuelDecor))
+            end
+        end
+
+        local savedFuel = type(saved) == 'table' and tonumber(saved.fuel) or tonumber(saved)
+        fuelCache[plate] = clampFuel(externalFuel or savedFuel or (math.random(startMinimum, startMaximum) + 0.0))
 
         if type(saved) == 'table' then
             leakCache[plate] = tonumber(saved.leak_level) or 0
         end
+
+        if externalFuel ~= nil then
+            local netId = NetworkGetNetworkIdFromEntity(vehicle)
+            dirtyFuel[plate] = { fuel = fuelCache[plate], netId = netId, leak = leakCache[plate] or 0 }
+        end
+
+        local shutOffLevel = math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
+        if fuelCache[plate] > shutOffLevel and Entity(vehicle).state.psFuelEmpty == true then
+            fuelForcedShutdown[plate] = true
+        end
+        applyFuelValue(vehicle, fuelCache[plate], true)
+    else
+        reconcileExternalFuel(vehicle, plate)
+        applyFuelValue(vehicle, fuelCache[plate], false)
     end
-    SetVehicleFuelLevel(vehicle, fuelCache[plate])
-    if fuelDecorEnabled() then DecorSetFloat(vehicle, fuelDecor, fuelCache[plate] + 0.0) end
+
+    restoreFuelDriveability(vehicle, fuelCache[plate], false)
     return fuelCache[plate]
 end
 
 local function setFuel(vehicle, amount)
-    if not DoesEntityExist(vehicle) then return end
+    if not DoesEntityExist(vehicle) then return false end
+    requestVehicleControl(vehicle, 900)
+
     local plate = trimPlate(vehicle)
-    local fuel = math.max(0.0, math.min(PSFuelConfig.MaxFuel, tonumber(amount) or 0.0))
+    local fuel = clampFuel(amount)
     fuelCache[plate] = fuel
     local netId = NetworkGetNetworkIdFromEntity(vehicle)
     dirtyFuel[plate] = { fuel = fuel, netId = netId, leak = leakCache[plate] or 0 }
-    SetVehicleFuelLevel(vehicle, fuel)
-    if fuelDecorEnabled() then DecorSetFloat(vehicle, fuelDecor, fuel + 0.0) end
-    Entity(vehicle).state:set('recoilFuel', fuel, true)
 
     local shutOffLevel = math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
     local empty = fuel <= shutOffLevel
-    SetVehicleUndriveable(vehicle, empty)
-    if empty then SetVehicleEngineOn(vehicle, false, true, true) end
+    if not empty and Entity(vehicle).state.psFuelEmpty == true then
+        fuelForcedShutdown[plate] = true
+    end
+    applyFuelValue(vehicle, fuel, true)
+
+    if empty then
+        fuelForcedShutdown[plate] = true
+        SetVehicleUndriveable(vehicle, true)
+        SetVehicleEngineOn(vehicle, false, true, true)
+    else
+        restoreFuelDriveability(vehicle, fuel, true)
+    end
+
+    return true
 end
 
 local function vehicleUsesDiesel(vehicle)
@@ -613,6 +764,10 @@ local function refuelVehicle(vehicle, station, fuelType, options)
         PSFuelNozzle.OnRefuelStop(fuelType)
     end
 
+    if purchased > 0 and DoesEntityExist(vehicle) then
+        restoreFuelDriveability(vehicle, getFuel(vehicle), true)
+    end
+
     if purchased > 0 then
         notify(('%s %.1f%% for £%s.'):format(electric and 'Charged' or 'Purchased', purchased, paid), 'success')
     elseif cancelled then
@@ -925,8 +1080,9 @@ CreateThread(function()
                     local drain = (PSFuelConfig.BaseDrain + GetVehicleCurrentRpm(vehicle) * PSFuelConfig.RPMMultiplier) * (PSFuelConfig.ClassMultiplier[class] or 1.0)
                     setFuel(vehicle, fuel - drain)
                 elseif fuel <= math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0) then
-                    SetVehicleEngineOn(vehicle, false, true, true)
-                    SetVehicleUndriveable(vehicle, true)
+                    setFuel(vehicle, fuel)
+                else
+                    restoreFuelDriveability(vehicle, fuel, false)
                 end
             end
         end
@@ -945,16 +1101,40 @@ CreateThread(function()
     end
 end)
 
-AddStateBagChangeHandler('recoilFuel', nil, function(bagName, _, value)
+local function onCompatibilityFuelStateChanged(bagName, value)
     local entity = GetEntityFromStateBagName(bagName)
     if entity == 0 or GetEntityType(entity) ~= 2 then return end
+
     local plate = trimPlate(entity)
-    fuelCache[plate] = tonumber(value) or fuelCache[plate]
-    if fuelCache[plate] then
-        SetVehicleFuelLevel(entity, fuelCache[plate])
-        if fuelDecorEnabled() then DecorSetFloat(entity, fuelDecor, fuelCache[plate] + 0.0) end
+    local fuel = tonumber(value)
+    if not fuel then return end
+
+    fuel = clampFuel(fuel)
+    local shutOffLevel = math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
+    if fuel > shutOffLevel and Entity(entity).state.psFuelEmpty == true then
+        fuelForcedShutdown[plate] = true
     end
+
+    fuelCache[plate] = fuel
+    lastAppliedFuel[plate] = fuel
+    local netId = NetworkGetNetworkIdFromEntity(entity)
+    if not NetworkGetEntityIsNetworked(entity) or NetworkHasControlOfEntity(entity) then
+        dirtyFuel[plate] = { fuel = fuel, netId = netId, leak = leakCache[plate] or 0 }
+    end
+    applyFuelValue(entity, fuel, false)
+    restoreFuelDriveability(entity, fuel, false)
+end
+
+AddStateBagChangeHandler('recoilFuel', nil, function(bagName, _, value)
+    onCompatibilityFuelStateChanged(bagName, value)
 end)
+
+local compatibilityFuelStateBag = tostring((PSFuelConfig.Compatibility or {}).FuelStateBag or 'fuel')
+if compatibilityFuelStateBag ~= '' and compatibilityFuelStateBag ~= 'recoilFuel' then
+    AddStateBagChangeHandler(compatibilityFuelStateBag, nil, function(bagName, _, value)
+        onCompatibilityFuelStateChanged(bagName, value)
+    end)
+end
 
 local function drawFuelWorldText(coords, text, scale)
     local visible, screenX, screenY = World3dToScreen2d(coords.x, coords.y, coords.z)
@@ -1132,6 +1312,52 @@ end)
 
 exports('GetFuel', getFuel)
 exports('SetFuel', setFuel)
+exports('getFuel', getFuel)
+exports('setFuel', setFuel)
+exports('GetVehicleFuel', getFuel)
+exports('SetVehicleFuel', setFuel)
+exports('AddFuel', function(vehicle, amount)
+    if not DoesEntityExist(vehicle) then return false end
+    return setFuel(vehicle, getFuel(vehicle) + (tonumber(amount) or 0.0))
+end)
+exports('RemoveFuel', function(vehicle, amount)
+    if not DoesEntityExist(vehicle) then return false end
+    return setFuel(vehicle, getFuel(vehicle) - (tonumber(amount) or 0.0))
+end)
+exports('IsFuelEmpty', function(vehicle)
+    if not DoesEntityExist(vehicle) then return true end
+    return getFuel(vehicle) <= math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0)
+end)
+exports('RestoreFuelDriveability', function(vehicle)
+    if not DoesEntityExist(vehicle) then return false end
+    restoreFuelDriveability(vehicle, getFuel(vehicle), false)
+    return true
+end)
+
+local function resolveCompatibilityVehicle(vehicleOrNetId)
+    local vehicle = tonumber(vehicleOrNetId) or 0
+    if vehicle ~= 0 and DoesEntityExist(vehicle) and GetEntityType(vehicle) == 2 then return vehicle end
+    if vehicle ~= 0 then
+        local entity = NetworkGetEntityFromNetworkId(vehicle)
+        if entity ~= 0 and DoesEntityExist(entity) and GetEntityType(entity) == 2 then return entity end
+    end
+    return nil
+end
+
+RegisterNetEvent('ps-fuel:client:setFuel', function(vehicleOrNetId, amount)
+    local vehicle = resolveCompatibilityVehicle(vehicleOrNetId) or cache.vehicle
+    if vehicle then setFuel(vehicle, amount) end
+end)
+
+RegisterNetEvent('ps-fuel:setFuel', function(vehicleOrNetId, amount)
+    local vehicle = resolveCompatibilityVehicle(vehicleOrNetId) or cache.vehicle
+    if vehicle then setFuel(vehicle, amount) end
+end)
+
+RegisterNetEvent('ps-fuel:client:addFuel', function(vehicleOrNetId, amount)
+    local vehicle = resolveCompatibilityVehicle(vehicleOrNetId) or cache.vehicle
+    if vehicle then setFuel(vehicle, getFuel(vehicle) + (tonumber(amount) or 0.0)) end
+end)
 
 
 local function nearestCharger()

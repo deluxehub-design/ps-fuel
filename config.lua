@@ -156,7 +156,7 @@ PSFuelConfig.Electric = {
     RopeType = 1,
 
     Blips = {
-        Enabled = false,
+        Enabled = true,
         Sprite = 620,
         Colour = 3,
         Scale = 0.65,
@@ -275,7 +275,7 @@ PSFuelConfig.Nozzles = {
     Animation = {
         -- Disabled by default: the player only takes the nozzle and inserts it
         -- into the vehicle. No pickup or refuelling animation is played.
-        Enabled = false,
+        Enabled = true,
         PickupDict = 'anim@am_hold_up@male',
         PickupClip = 'shoplift_high',
         RefuelDict = 'timetable@gardener@filling_can',
@@ -284,7 +284,7 @@ PSFuelConfig.Nozzles = {
 
     BreakHose = {
         Enabled = true,
-        ExplodePump = false,
+        ExplodePump = true,
         ExplosionChance = 100,
         ExplosionType = 5,
     },
@@ -319,10 +319,15 @@ PSFuelConfig.WorldDisplay = {
 
 PSFuelConfig.Safety = {
     RequireEngineOff = true,
-    VehicleBlowUp = false,
+    VehicleBlowUp = true,
     BlowUpChance = 5,
     LeaveEngineRunning = false,
     ShutOffAtFuel = 0.0,
+
+    -- When ps-fuel shuts a vehicle down at 0%, adding fuel clears the native
+    -- undriveable flag again. Set this true if you also want the engine to
+    -- automatically start when the local driver is still in the vehicle.
+    AutoRestartAfterRefuel = false,
 }
 
 PSFuelConfig.EmergencyDiscount = {
@@ -365,10 +370,10 @@ PSFuelConfig.Ownership = {
     -- Public stations remain usable by everyone for refuelling but cannot be
     -- purchased or managed by players. Admins can still view them in the global
     -- fuel administration screen.
-    AllowAdminPanelAtPublicStations = false,
+    AllowAdminPanelAtPublicStations = true,
 
     -- Only pay the owner share when a station currently has an owner.
-    PublicStationsKeepOwnerShare = false,
+    PublicStationsKeepOwnerShare = true,
 }
 
 PSFuelConfig.StationTablet = {
@@ -421,11 +426,39 @@ PSFuelConfig.FuelTypes = {
 }
 
 
+PSFuelConfig.VersionCheck = {
+    Enabled = true,
+
+    -- GitHub repository in owner/repository format, for example: Techy/ps-fuel
+    -- You can also set this without editing the resource by adding
+    -- set ps_fuel_github_repo "owner/repository" to server.cfg.
+    Repository = '',
+
+    -- Checks once shortly after the resource starts and then on this interval.
+    CheckOnStart = true,
+    CheckIntervalHours = 6,
+}
+
 PSFuelConfig.Compatibility = {
-    -- Keeps compatibility with scripts that read the original ps-fuel/LegacyFuel
-    -- decorator directly instead of using the exported GetFuel function.
+    -- LegacyFuel/TGIANN-style scripts often read/write this decorator.
     UseFuelDecor = true,
     FuelDecor = '_FUEL_LEVEL',
+
+    -- Mirror fuel to Entity(vehicle).state.fuel for HUDs, garages and custom
+    -- resources that use an ox-style statebag instead of an export.
+    SyncFuelStateBag = true,
+    FuelStateBag = 'fuel',
+
+    -- If another resource changes the GTA fuel native, the decorator or the
+    -- fuel statebag, ps-fuel adopts that value instead of overwriting it with
+    -- a stale cache entry. This is important for TGIANN/JG/custom scripts.
+    SyncExternalWrites = true,
+    ExternalWriteTolerance = 0.15,
+
+    -- On the first read of a spawned vehicle, prefer a fuel value already set
+    -- by a garage/vehicle script through the statebag or _FUEL_LEVEL decorator.
+    -- This preserves fuel restored by TGIANN/JG/custom garage resources.
+    PreferExternalFuelOnFirstSeen = true,
 }
 
 PSFuelConfig.RefuelKey = 38

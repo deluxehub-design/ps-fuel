@@ -4,7 +4,7 @@ game 'gta5'
 name 'ps-fuel'
 author 'PS Development / Techy / PLUUUX Solutions'
 description 'Standalone physical fuel and EV charging system with runtime vehicle profiles, fast charging, stations and ownership'
-version '3.2.0'
+version '3.2.2'
 
 
 ui_page 'web/index.html'
@@ -24,7 +24,8 @@ server_scripts {
     'server/security.lua',
     'server/inventory.lua',
     'server/database.lua',
-    'server/main.lua'
+    'server/main.lua',
+    'server/version.lua'
 }
 
 files {

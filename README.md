@@ -1,4 +1,4 @@
-# PS Fuel 3.2.1 — Production Release
+# PS Fuel 3.2.0 — Production Release
 
 This is the Fuel Network separated from `ps-tablet`. It does not require the tablet and includes its own FuelOS station-management and fuel-selection NUI.
 
@@ -121,6 +121,12 @@ PSFuelConfig.Nozzles.Animation.Enabled = false
 ```lua
 local fuel = exports['ps-fuel']:GetFuel(vehicle)
 exports['ps-fuel']:SetFuel(vehicle, 100.0)
+exports['ps-fuel']:AddFuel(vehicle, 10.0)
+exports['ps-fuel']:RemoveFuel(vehicle, 5.0)
+
+-- Lowercase aliases are also available for custom resources.
+local sameFuel = exports['ps-fuel']:getFuel(vehicle)
+exports['ps-fuel']:setFuel(vehicle, 75.0)
 
 local holdingEVNozzle = exports['cdn-fuel']:IsHoldingElectricNozzle()
 exports['cdn-fuel']:SetElectricNozzle('pickup')
@@ -131,7 +137,7 @@ exports['cdn-fuel']:SetElectricNozzle('putback')
 
 Edit `config.lua` to change station positions, ownership, prices, tax, fuel types, static diesel/electric models, charge speeds, fast-charge pricing, EV chargers, nozzles, world-display height, hose behaviour, emergency discounts, deliveries, robberies and blips.
 
-The imported donor assets and behaviours retain their GPL notices at `https://github.com/codinedev/cdn-fuel?tab=GPL-3.0-1-ov-file and https://github.com/Project-Sloth/ps-fuel?tab=GPL-3.0-1-ov-file`.
+The imported donor assets and behaviours retain their GPL notices in `licenses/`.
 
 
 ## Public-release notes
@@ -140,3 +146,33 @@ The imported donor assets and behaviours retain their GPL notices at `https://gi
 - Do not run another resource providing `ps-fuel`, `cdn-fuel` or `LegacyFuel`.
 - The entire combined resource is distributed under GPL-3.0 because it incorporates GPL-licensed donor code and assets. If you sell it, buyers must receive the complete corresponding source and GPL rights, including the right to redistribute original or modified copies.
 - Run the checklist in `TESTING.md` on a staging server before deploying updates.
+
+## TGIANN, JG and custom-script compatibility
+
+Version 3.2.2 keeps the GTA native fuel level, `_FUEL_LEVEL` decorator, `recoilFuel` statebag and the generic `fuel` statebag synchronized. External changes made through any of those common paths are reconciled back into ps-fuel's cache and persistence layer.
+
+JG resources can use `Config.FuelSystem = "ps-fuel"` and call the standard `GetFuel` / `SetFuel` exports. TGIANN/custom resources that write `SetVehicleFuelLevel` and `_FUEL_LEVEL` are also detected. For new custom resources, prefer the ps-fuel exports because they update persistence and engine-empty state immediately.
+
+When a tank reaches the configured shut-off threshold, ps-fuel marks the vehicle empty and makes it undriveable. As soon as fuel is restored, that lock is explicitly cleared so the engine can be started normally again.
+
+
+## Version checker
+
+ps-fuel 3.2.2 includes an optional server-side GitHub release checker. It reads the installed version from `fxmanifest.lua` and compares it with the latest published GitHub release.
+
+Set the repository either in `config.lua` or in `server.cfg`:
+
+```cfg
+set ps_fuel_github_repo "owner/repository"
+```
+
+The repository must be written as `owner/repository`. For public GitHub repositories no token is required.
+
+Useful server-console command:
+
+```text
+psfuelversion
+```
+
+The checker only prints update information. A failed GitHub request will not stop, restart or affect the fuel resource.
+
