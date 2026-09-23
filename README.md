@@ -1,4 +1,4 @@
-# PS Fuel 3.2.0 — Production Release
+# PS Fuel 3.2.2
 
 This is the Fuel Network separated from `ps-tablet`. It does not require the tablet and includes its own FuelOS station-management and fuel-selection NUI.
 
@@ -43,7 +43,22 @@ Do not start the donor `cdn-fuel` or another `ps-fuel` at the same time.
 
 ## Database
 
-The resource automatically creates and upgrades its `ps_fuel_*` tables, including `ps_fuel_vehicle_profiles`. Existing data from the tablet-integrated version is reused. No manual SQL import is required. A manual SQL file remains available at `install/ps-fuel.sql`.
+On startup, the resource automatically loads `install/ps-fuel.sql`, creates any missing `ps_fuel_*` tables, and applies compatibility migrations for existing installations. No manual SQL import is required.
+
+
+## Version checker
+
+`version.lua` handles update checks without adding version logic to the main server files. The installed version is read from `fxmanifest.lua`.
+
+The default update repository is `deluxehub-evolvenetwork/ps-fuel`, so no `server.cfg` entry is required.
+
+The checker runs shortly after startup and then every six hours. You can change the interval with `ps_fuel_version_check_hours` or run `psfuelversion` from the server console for an immediate check. If GitHub cannot be reached, the fuel resource continues running normally.
+
+If the project is ever forked or moved, the repository can be overridden with:
+
+```cfg
+set ps_fuel_github_repo "OWNER/REPOSITORY"
+```
 
 ## Commands
 
@@ -154,25 +169,3 @@ Version 3.2.2 keeps the GTA native fuel level, `_FUEL_LEVEL` decorator, `recoilF
 JG resources can use `Config.FuelSystem = "ps-fuel"` and call the standard `GetFuel` / `SetFuel` exports. TGIANN/custom resources that write `SetVehicleFuelLevel` and `_FUEL_LEVEL` are also detected. For new custom resources, prefer the ps-fuel exports because they update persistence and engine-empty state immediately.
 
 When a tank reaches the configured shut-off threshold, ps-fuel marks the vehicle empty and makes it undriveable. As soon as fuel is restored, that lock is explicitly cleared so the engine can be started normally again.
-
-
-## Version checker
-
-ps-fuel 3.2.2 includes an optional server-side GitHub release checker. It reads the installed version from `fxmanifest.lua` and compares it with the latest published GitHub release.
-
-Set the repository either in `config.lua` or in `server.cfg`:
-
-```cfg
-set ps_fuel_github_repo "owner/repository"
-```
-
-The repository must be written as `owner/repository`. For public GitHub repositories no token is required.
-
-Useful server-console command:
-
-```text
-psfuelversion
-```
-
-The checker only prints update information. A failed GitHub request will not stop, restart or affect the fuel resource.
-

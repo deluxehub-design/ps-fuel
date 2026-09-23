@@ -68,10 +68,3 @@ CREATE TABLE IF NOT EXISTS `ps_fuel_audit_logs` (
 INSERT INTO `ps_fuel_settings` (`setting_key`, `setting_value`)
 VALUES ('market_multiplier', '1.0')
 ON DUPLICATE KEY UPDATE `setting_key` = `setting_key`;
-
-ALTER TABLE `ps_fuel_vehicles`
-  ADD COLUMN IF NOT EXISTS `leak_level` tinyint unsigned NOT NULL DEFAULT 0;
-
-ALTER TABLE `ps_fuel_stations`
-  ADD COLUMN IF NOT EXISTS `stock` decimal(12,2) NOT NULL DEFAULT 10000.00,
-  ADD COLUMN IF NOT EXISTS `capacity` decimal(12,2) NOT NULL DEFAULT 10000.00;

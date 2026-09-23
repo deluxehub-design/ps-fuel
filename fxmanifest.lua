@@ -20,12 +20,12 @@ client_scripts {
 }
 
 server_scripts {
+    'version.lua',
     '@oxmysql/lib/MySQL.lua',
     'server/security.lua',
     'server/inventory.lua',
     'server/database.lua',
-    'server/main.lua',
-    'server/version.lua'
+    'server/main.lua'
 }
 
 files {

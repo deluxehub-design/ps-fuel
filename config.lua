@@ -426,19 +426,6 @@ PSFuelConfig.FuelTypes = {
 }
 
 
-PSFuelConfig.VersionCheck = {
-    Enabled = true,
-
-    -- GitHub repository in owner/repository format, for example: Techy/ps-fuel
-    -- You can also set this without editing the resource by adding
-    -- set ps_fuel_github_repo "owner/repository" to server.cfg.
-    Repository = '',
-
-    -- Checks once shortly after the resource starts and then on this interval.
-    CheckOnStart = true,
-    CheckIntervalHours = 6,
-}
-
 PSFuelConfig.Compatibility = {
     -- LegacyFuel/TGIANN-style scripts often read/write this decorator.
     UseFuelDecor = true,
