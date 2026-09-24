@@ -2,6 +2,13 @@
 
 Vehicle Energy, Fleet & Station Operations update.
 
+## Hotfix — server vehicle class resolution
+
+- Fixed `server/advanced.lua` calling the client-only `GetVehicleClass` native on the FXServer.
+- Added a validated client-reported/statebag vehicle-class bridge for advanced fuel callbacks.
+- Fixed advanced vehicle state, siphoning, vehicle-to-vehicle transfer, portable cans, mobile refuelling and private energy points using vehicle classes server-side.
+- Preserved model/class-specific tank capacities without spamming server callback errors.
+
 ## Added
 
 - Octane and fuel-quality system with 87/89/91/93, E85 and diesel grades.

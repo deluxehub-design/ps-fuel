@@ -6,3 +6,13 @@ html,body{width:100%!important;height:100%!important;min-height:0!important;back
 #fuel-root .terminal{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;padding:0!important;border-radius:0!important;border:0!important;box-shadow:none!important;background:transparent!important}
 #fuel-root .terminal:before,#fuel-root .hardware-button,#fuel-root .camera{display:none!important}
 #fuel-root .screen{width:100%!important;height:100%!important;border-radius:0!important}
+
+.employee-modal-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,5,12,.66)}
+.employee-modal{width:min(430px,92vw);border:1px solid rgba(111,179,214,.24);border-radius:18px;background:linear-gradient(145deg,rgba(8,20,38,.99),rgba(3,9,20,.99));box-shadow:0 26px 70px rgba(0,0,0,.58);padding:18px}
+.employee-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:8px}
+.employee-modal-head h2{margin:0;font-size:20px}
+.employee-modal-close{border:0;background:transparent;color:#9fb3c4;font-size:26px;line-height:1;cursor:pointer;padding:0 4px}
+.employee-modal-close:hover{color:#fff}
+.employee-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:18px}
+.employee-modal-actions .primary,.employee-modal-actions .secondary{width:100%}
+.employee-modal select.text-input{appearance:auto}

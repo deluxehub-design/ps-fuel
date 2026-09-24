@@ -29,6 +29,17 @@ local function identifier(source)
     return player and PSFuelFramework.GetIdentifier(player), player
 end
 
+local function vehicleClass(vehicle, reported)
+    local value
+    if vehicle and vehicle ~= 0 then
+        local ok, state = pcall(function() return Entity(vehicle).state end)
+        if ok and state then value = tonumber(state.psFuelClass) end
+    end
+    value = value or tonumber(reported)
+    if not value or value < 0 or value > 22 then return 0 end
+    return math.floor(value)
+end
+
 local function playerName(player)
     if not player then return 'Unknown' end
     local data = player.PlayerData or {}
@@ -472,13 +483,13 @@ CreateThread(function()
 end)
 
 
-lib.callback.register('ps-fuel:server:getVehicleAdvanced', function(source, netId)
+lib.callback.register('ps-fuel:server:getVehicleAdvanced', function(source, netId, reportedClass)
     local vehicle = NetworkGetEntityFromNetworkId(tonumber(netId) or 0)
     if vehicle == 0 or GetEntityType(vehicle) ~= 2 then return nil end
     if not PSFuelSecurity.PlayerNearEntity(source, vehicle, 12.0) then return nil end
     local plate = GetVehicleNumberPlateText(vehicle)
     local model = GetEntityModel(vehicle)
-    local class = GetVehicleClass(vehicle)
+    local class = vehicleClass(vehicle, reportedClass)
     local electric=(PSFuelConfig.Electric or {}).Models and (PSFuelConfig.Electric or {}).Models[model]==true
     if not electric then local dbType=MySQL.scalar.await('SELECT fuel_type FROM ps_fuel_vehicle_profiles WHERE model_hash=?',{model}); electric=dbType=='electric' end
     local baseFamily = baseFuelFamily(model, class, electric)
@@ -777,7 +788,7 @@ lib.callback.register('ps-fuel:server:repairStation', function(source, stationId
     return {success=true,message=('Station maintenance completed for %s%d.'):format(cfg('Units.CurrencySymbol','£'),cost)}
 end)
 
-lib.callback.register('ps-fuel:server:siphonFuel', function(source, netId, requested, fuelType)
+lib.callback.register('ps-fuel:server:siphonFuel', function(source, netId, requested, fuelType, reportedClass)
     local siphon = cfg('Siphoning', {})
     if siphon.Enabled ~= true then return { success = false, message = 'Siphoning is disabled.' } end
     local vehicle = NetworkGetEntityFromNetworkId(tonumber(netId) or 0)
@@ -789,7 +800,7 @@ lib.callback.register('ps-fuel:server:siphonFuel', function(source, netId, reque
     end
     local player = PSFuelFramework.GetPlayer(source)
     if not player then return { success = false, message = 'Player data unavailable.' } end
-    local model, class = GetEntityModel(vehicle), GetVehicleClass(vehicle)
+    local model, class = GetEntityModel(vehicle), vehicleClass(vehicle, reportedClass)
     local profile = S.GetTankProfile(model, class, false)
     local currentPct = tonumber(Entity(vehicle).state.fuel) or tonumber(GetVehicleFuelLevel(vehicle)) or 0
     local available = S.PercentToVolume(currentPct, profile.capacity)
@@ -808,7 +819,7 @@ lib.callback.register('ps-fuel:server:siphonFuel', function(source, netId, reque
     return { success = true, fuel = newPct, amount = amount, message = ('Siphoned %.1f L of fuel.'):format(amount) }
 end)
 
-lib.callback.register('ps-fuel:server:vehicleTransfer', function(source, sourceNetId, targetNetId, requested)
+lib.callback.register('ps-fuel:server:vehicleTransfer', function(source, sourceNetId, targetNetId, requested, sourceClass, targetClass)
     local sourceVehicle = NetworkGetEntityFromNetworkId(tonumber(sourceNetId) or 0)
     local targetVehicle = NetworkGetEntityFromNetworkId(tonumber(targetNetId) or 0)
     if sourceVehicle == 0 or targetVehicle == 0 or sourceVehicle == targetVehicle then
@@ -820,8 +831,8 @@ lib.callback.register('ps-fuel:server:vehicleTransfer', function(source, sourceN
     if #(GetEntityCoords(sourceVehicle) - GetEntityCoords(targetVehicle)) > 8.0 then
         return { success = false, message = 'The vehicles are too far apart.' }
     end
-    local sProfile = S.GetTankProfile(GetEntityModel(sourceVehicle), GetVehicleClass(sourceVehicle), false)
-    local tProfile = S.GetTankProfile(GetEntityModel(targetVehicle), GetVehicleClass(targetVehicle), false)
+    local sProfile = S.GetTankProfile(GetEntityModel(sourceVehicle), vehicleClass(sourceVehicle, sourceClass), false)
+    local tProfile = S.GetTankProfile(GetEntityModel(targetVehicle), vehicleClass(targetVehicle, targetClass), false)
     local sPct = tonumber(Entity(sourceVehicle).state.fuel) or tonumber(GetVehicleFuelLevel(sourceVehicle)) or 0
     local tPct = tonumber(Entity(targetVehicle).state.fuel) or tonumber(GetVehicleFuelLevel(targetVehicle)) or 0
     local sVol = S.PercentToVolume(sPct, sProfile.capacity)
@@ -884,7 +895,7 @@ end
 
 CreateThread(function() Wait(1500) registerPortableItems() end)
 
-lib.callback.register('ps-fuel:server:portableTransfer',function(source,itemName,slot,netId,direction,requested)
+lib.callback.register('ps-fuel:server:portableTransfer',function(source,itemName,slot,netId,direction,requested,reportedClass)
     local containers=cfg('PortableFuel.Containers',{})
     local def=containers[itemName]
     if not def then return {success=false,message='Unknown fuel container.'} end
@@ -896,7 +907,7 @@ lib.callback.register('ps-fuel:server:portableTransfer',function(source,itemName
     local capacity=tonumber(metadata.capacity) or tonumber(def.capacity) or 20
     local held=S.Clamp(metadata.fuel or 0,0,capacity)
     local vehiclePct=tonumber(Entity(vehicle).state.fuel) or tonumber(GetVehicleFuelLevel(vehicle)) or 0
-    local model=GetEntityModel(vehicle); local class=GetVehicleClass(vehicle)
+    local model=GetEntityModel(vehicle); local class=vehicleClass(vehicle,reportedClass)
     local base=baseFuelFamily(model,class,false)
     local tank=S.GetTankProfile(model,class,false)
     local vehicleVolume=S.PercentToVolume(vehiclePct,tank.capacity)
@@ -925,7 +936,7 @@ lib.callback.register('ps-fuel:server:portableTransfer',function(source,itemName
     return {success=true,message=('Transferred %.1f L.'):format(amount),fuel=newPct,containerFuel=newHeld}
 end)
 
-lib.callback.register('ps-fuel:server:mobileRefuel',function(source,serviceNetId,targetNetId,requested)
+lib.callback.register('ps-fuel:server:mobileRefuel',function(source,serviceNetId,targetNetId,requested,targetClass)
     local service=NetworkGetEntityFromNetworkId(tonumber(serviceNetId) or 0)
     local target=NetworkGetEntityFromNetworkId(tonumber(targetNetId) or 0)
     if service==0 or target==0 or GetEntityType(service)~=2 or GetEntityType(target)~=2 then return {success=false,message='Vehicle unavailable.'} end
@@ -935,7 +946,7 @@ lib.callback.register('ps-fuel:server:mobileRefuel',function(source,serviceNetId
     local servicePlate=S.TrimPlate(GetVehicleNumberPlateText(service))
     local cargo=MySQL.single.await('SELECT * FROM ps_fuel_tanker_cargo WHERE plate=?',{servicePlate})
     if not cargo or tonumber(cargo.amount)<=0 then return {success=false,message='The service vehicle has no fuel cargo.'} end
-    local targetTank=S.GetTankProfile(GetEntityModel(target),GetVehicleClass(target),false)
+    local targetTank=S.GetTankProfile(GetEntityModel(target),vehicleClass(target,targetClass),false)
     local pct=tonumber(Entity(target).state.fuel) or tonumber(GetVehicleFuelLevel(target)) or 0
     local current=S.PercentToVolume(pct,targetTank.capacity)
     local amount=math.min(math.max(.1,tonumber(requested) or 10),tonumber(cargo.amount),math.max(0,targetTank.capacity-current))
@@ -1165,7 +1176,7 @@ local function privatePointAuthorised(source,row,vehicle)
     return false
 end
 
-lib.callback.register('ps-fuel:server:usePrivatePoint',function(source,pointId,netId,amount,fuelType,account)
+lib.callback.register('ps-fuel:server:usePrivatePoint',function(source,pointId,netId,amount,fuelType,account,reportedClass)
     local row=MySQL.single.await('SELECT * FROM ps_fuel_private_points WHERE id=? AND active=1',{tonumber(pointId) or 0})
     local vehicle=NetworkGetEntityFromNetworkId(tonumber(netId) or 0)
     if not row or vehicle==0 or GetEntityType(vehicle)~=2 then return {success=false,message='Energy point unavailable.'} end
@@ -1178,7 +1189,8 @@ lib.callback.register('ps-fuel:server:usePrivatePoint',function(source,pointId,n
     local family=S.FuelFamily(fuelType)
     if electric and family~='electric' then return {success=false,message='This is an EV charger.'} end
     if not electric and family=='electric' then return {success=false,message='This is a liquid-fuel pump.'} end
-    local tank=S.GetTankProfile(GetEntityModel(vehicle),GetVehicleClass(vehicle),electric)
+    local class=vehicleClass(vehicle,reportedClass)
+    local tank=S.GetTankProfile(GetEntityModel(vehicle),class,electric)
     local pct=tonumber(Entity(vehicle).state.fuel) or tonumber(GetVehicleFuelLevel(vehicle)) or 0
     local current=S.PercentToVolume(pct,tank.capacity)
     amount=math.min(math.max(.1,tonumber(amount) or 5),math.max(0,tank.capacity-current))
@@ -1189,7 +1201,7 @@ lib.callback.register('ps-fuel:server:usePrivatePoint',function(source,pointId,n
     local player=PSFuelFramework.GetPlayer(source); account=tostring(account or 'bank')
     if not player or PSFuelFramework.GetMoney(player,account)<price or not PSFuelFramework.RemoveMoney(player,account,price,'ps-fuel-private-energy') then return {success=false,message='Payment failed.'} end
     local newPct=S.VolumeToPercent(current+amount,tank.capacity); Entity(vehicle).state:set('fuel',newPct,true)
-    A.RecordPurchase({source=source,stationId=row.station_id,plate=S.TrimPlate(GetVehicleNumberPlateText(vehicle)),model=GetEntityModel(vehicle),class=GetVehicleClass(vehicle),fuelType=fuelType,volume=amount,percent=newPct-pct,price=price,playerName=playerName(player),baseFuelType=baseFuelFamily(GetEntityModel(vehicle),GetVehicleClass(vehicle),electric)})
+    A.RecordPurchase({source=source,stationId=row.station_id,plate=S.TrimPlate(GetVehicleNumberPlateText(vehicle)),model=GetEntityModel(vehicle),class=class,fuelType=fuelType,volume=amount,percent=newPct-pct,price=price,playerName=playerName(player),baseFuelType=baseFuelFamily(GetEntityModel(vehicle),class,electric)})
     return {success=true,message=('Added %.1f %s for %s%d.'):format(amount,electric and 'kWh' or 'L',cfg('Units.CurrencySymbol','£'),price),fuel=newPct}
 end)
 

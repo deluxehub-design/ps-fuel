@@ -31,6 +31,16 @@ local function fuel(vehicle)
     return PSFuelRuntime and PSFuelRuntime.GetFuel and PSFuelRuntime.GetFuel(vehicle) or GetVehicleFuelLevel(vehicle)
 end
 
+local function syncedVehicleClass(vehicle)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return 0 end
+    local class = GetVehicleClass(vehicle)
+    local state = Entity(vehicle).state
+    if state and tonumber(state.psFuelClass) ~= class then
+        pcall(function() state:set('psFuelClass', class, true) end)
+    end
+    return class
+end
+
 local function volume(vehicle)
     local profile = vehicleProfile(vehicle)
     if not profile then return 0,0 end
@@ -144,7 +154,7 @@ end
 local function refreshVehicleState(vehicle)
     if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return end
     local netId = NetworkGetNetworkIdFromEntity(vehicle)
-    local state = lib.callback.await('ps-fuel:server:getVehicleAdvanced', false, netId)
+    local state = lib.callback.await('ps-fuel:server:getVehicleAdvanced', false, netId, syncedVehicleClass(vehicle))
     if state then vehicleState[plate(vehicle)] = state end
 end
 
@@ -294,7 +304,7 @@ RegisterCommand('siphonfuel',function(_,args)
     amount=math.min(amount,available)
     if amount<=0 then return notify('The tank is empty.','error') end
     if not lib.skillCheck({'easy','medium'},{'w','a','s','d'}) then return notify('Siphoning failed.','error') end
-    local response=lib.callback.await('ps-fuel:server:siphonFuel',false,NetworkGetNetworkIdFromEntity(vehicle),amount,A.GetFuelType(vehicle))
+    local response=lib.callback.await('ps-fuel:server:siphonFuel',false,NetworkGetNetworkIdFromEntity(vehicle),amount,A.GetFuelType(vehicle),syncedVehicleClass(vehicle))
     if response and response.success then
         PSFuelRuntime.SetFuel(vehicle,response.fuel)
         notify(response.message,'success')
@@ -312,7 +322,7 @@ RegisterCommand('fueltransfer',function(_,args)
     local sourceCap=A.GetFuelCapacity(sourceVeh); local targetCap=A.GetFuelCapacity(target)
     amount=math.min(amount,S.PercentToVolume(fuel(sourceVeh),sourceCap),targetCap-S.PercentToVolume(fuel(target),targetCap))
     if amount<=0 then return notify('No transferable capacity is available.','error') end
-    local response=lib.callback.await('ps-fuel:server:vehicleTransfer',false,NetworkGetNetworkIdFromEntity(sourceVeh),NetworkGetNetworkIdFromEntity(target),amount)
+    local response=lib.callback.await('ps-fuel:server:vehicleTransfer',false,NetworkGetNetworkIdFromEntity(sourceVeh),NetworkGetNetworkIdFromEntity(target),amount,syncedVehicleClass(sourceVeh),syncedVehicleClass(target))
     if response and response.success then
         PSFuelRuntime.SetFuel(sourceVeh,response.sourceFuel)
         PSFuelRuntime.SetFuel(target,response.targetFuel)
@@ -390,7 +400,7 @@ RegisterNetEvent('ps-fuel:client:usePortableContainer',function(itemName,def,met
     local maxDisplay=S.FormatVolume(capacity)
     local input=lib.inputDialog('Fuel transfer',{{type='number',label=heldUnit,default=math.min(5,maxDisplay),min=0.1,max=maxDisplay,step=0.5,required=true}})
     if not input then return end
-    local response=lib.callback.await('ps-fuel:server:portableTransfer',false,itemName,slot,NetworkGetNetworkIdFromEntity(vehicle),direction,S.ToBaseVolume(tonumber(input[1])))
+    local response=lib.callback.await('ps-fuel:server:portableTransfer',false,itemName,slot,NetworkGetNetworkIdFromEntity(vehicle),direction,S.ToBaseVolume(tonumber(input[1])),syncedVehicleClass(vehicle))
     if response and response.success then
         PSFuelRuntime.SetFuel(vehicle,response.fuel)
         notify(response.message,'success')
@@ -405,7 +415,7 @@ RegisterCommand('mobilefuel',function(_,args)
         if veh~=service then local d=#(GetEntityCoords(veh)-origin); if d<best and d<=10 then best=d target=veh end end
     end
     if target==0 then return notify('No target vehicle nearby.','error') end
-    local response=lib.callback.await('ps-fuel:server:mobileRefuel',false,NetworkGetNetworkIdFromEntity(service),NetworkGetNetworkIdFromEntity(target),S.ToBaseVolume(tonumber(args[1]) or 10))
+    local response=lib.callback.await('ps-fuel:server:mobileRefuel',false,NetworkGetNetworkIdFromEntity(service),NetworkGetNetworkIdFromEntity(target),S.ToBaseVolume(tonumber(args[1]) or 10),syncedVehicleClass(target))
     if response and response.success then PSFuelRuntime.SetFuel(target,response.fuel) notify(response.message,'success') else notify(response and response.message or 'Mobile refuel failed.','error') end
 end,false)
 
@@ -507,7 +517,7 @@ local function loadPrivatePoints()
                 local fields={{type='number',label=electric and 'kWh' or volumeUnit,default=10,min=.1,max=100,step=.5,required=true}}
                 if not electric then fields[#fields+1]={type='select',label='Fuel type',options=options,default='petrol',required=true} end
                 local input=lib.inputDialog(point.label,fields); if not input then return end
-                local response=lib.callback.await('ps-fuel:server:usePrivatePoint',false,point.id,NetworkGetNetworkIdFromEntity(vehicle),electric and tonumber(input[1]) or S.ToBaseVolume(tonumber(input[1])),electric and 'electric' or input[2],'bank')
+                local response=lib.callback.await('ps-fuel:server:usePrivatePoint',false,point.id,NetworkGetNetworkIdFromEntity(vehicle),electric and tonumber(input[1]) or S.ToBaseVolume(tonumber(input[1])),electric and 'electric' or input[2],'bank',syncedVehicleClass(vehicle))
                 if response and response.success then PSFuelRuntime.SetFuel(vehicle,response.fuel) notify(response.message,'success') else notify(response and response.message or 'Energy point failed.','error') end
             end}}})
             privateTargets[#privateTargets+1]=id

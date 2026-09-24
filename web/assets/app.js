@@ -29,7 +29,86 @@
     document.getElementById('toast-stack').appendChild(item);
     setTimeout(() => item.remove(), 3400);
   };
+  let employeeModal = null;
+  const closeEmployeeModal = () => {
+    if (!employeeModal) return;
+    employeeModal.remove();
+    employeeModal = null;
+  };
+  const openEmployeeModal = () => {
+    closeEmployeeModal();
+    const overlay = document.createElement('div');
+    overlay.className = 'employee-modal-overlay';
+    overlay.innerHTML = `
+      <div class="employee-modal" role="dialog" aria-modal="true" aria-labelledby="employee-modal-title">
+        <div class="employee-modal-head">
+          <div>
+            <p class="eyebrow">STATION STAFF</p>
+            <h2 id="employee-modal-title">Add employee</h2>
+          </div>
+          <button class="employee-modal-close" type="button" aria-label="Close">×</button>
+        </div>
+        <form id="employee-form">
+          <label class="form-label" for="employee-identifier">Player identifier / citizen ID</label>
+          <input class="text-input" id="employee-identifier" name="identifier" type="text" maxlength="80" autocomplete="off" required>
+          <label class="form-label" for="employee-name">Display name</label>
+          <input class="text-input" id="employee-name" name="name" type="text" maxlength="80" autocomplete="off">
+          <label class="form-label" for="employee-role">Role</label>
+          <select class="text-input" id="employee-role" name="role">
+            <option value="employee">Employee</option>
+            <option value="manager">Manager</option>
+          </select>
+          <div class="employee-modal-actions">
+            <button class="secondary" id="employee-cancel" type="button">Cancel</button>
+            <button class="primary" id="employee-save" type="submit">Add employee</button>
+          </div>
+        </form>
+      </div>`;
+    document.body.appendChild(overlay);
+    employeeModal = overlay;
+
+    const identifierInput = overlay.querySelector('#employee-identifier');
+    const nameInput = overlay.querySelector('#employee-name');
+    const roleInput = overlay.querySelector('#employee-role');
+    const form = overlay.querySelector('#employee-form');
+    const saveButton = overlay.querySelector('#employee-save');
+
+    overlay.querySelector('.employee-modal-close')?.addEventListener('click', closeEmployeeModal);
+    overlay.querySelector('#employee-cancel')?.addEventListener('click', closeEmployeeModal);
+    overlay.addEventListener('mousedown', (event) => {
+      if (event.target === overlay) closeEmployeeModal();
+    });
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const identifier = String(identifierInput?.value || '').trim();
+      if (!identifier) {
+        toast('Enter a player identifier or citizen ID.', 'error');
+        identifierInput?.focus();
+        return;
+      }
+      const name = String(nameInput?.value || '').trim() || identifier;
+      const role = roleInput?.value === 'manager' ? 'manager' : 'employee';
+      if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.textContent = 'SAVING...';
+      }
+      const response = await post('addStationEmployee', {stationId:state.id,identifier,name,role});
+      if (!response?.success) {
+        toast(response?.message || 'Employee update failed.', 'error');
+        if (saveButton) {
+          saveButton.disabled = false;
+          saveButton.textContent = 'Add employee';
+        }
+        return;
+      }
+      closeEmployeeModal();
+      toast(response?.message || 'Employee saved.', 'success');
+      await refreshStation(false);
+    });
+    requestAnimationFrame(() => identifierInput?.focus());
+  };
   const close = () => {
+    closeEmployeeModal();
     root.classList.remove('visible');
     root.setAttribute('aria-hidden', 'true');
     post('fuelClose');
@@ -170,13 +249,13 @@
     document.getElementById('repair-station')?.addEventListener('click', async () => {const response=await post('repairStation',{stationId:state.id});toast(response?.message||'Maintenance failed.',response?.success?'success':'error');if(response?.success)refreshStation();});
     app.querySelectorAll('.upgrade-button').forEach((button)=>button.addEventListener('click',async()=>{const response=await post('upgradeStation',{stationId:state.id,upgrade:button.dataset.upgrade});toast(response?.message||'Upgrade failed.',response?.success?'success':'error');if(response?.success)refreshStation();}));
     app.querySelectorAll('.remove-employee').forEach((button)=>button.addEventListener('click',async()=>{const response=await post('removeStationEmployee',{stationId:state.id,identifier:button.dataset.identifier});toast(response?.message||'Employee update failed.',response?.success?'success':'error');if(response?.success)refreshStation();}));
-    document.getElementById('add-employee')?.addEventListener('click',async()=>{const identifier=window.prompt('Player identifier / citizen ID');if(!identifier)return;const name=window.prompt('Employee display name')||identifier;const role=window.prompt('Role: employee or manager')||'employee';const response=await post('addStationEmployee',{stationId:state.id,identifier,name,role});toast(response?.message||'Employee update failed.',response?.success?'success':'error');if(response?.success)refreshStation();});
+    document.getElementById('add-employee')?.addEventListener('click', openEmployeeModal);
   }
-  async function refreshStation(){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;toast('Station data synchronised.','success');render();}else toast(response?.message||'Refresh failed.','error');}
+  async function refreshStation(showToast = true){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;if(showToast)toast('Station data synchronised.','success');render();return true;}toast(response?.message||'Refresh failed.','error');return false;}
   function open(payload){mode=payload.mode||'refuel';state=payload.data||{};activeTab='overview';const valid=fuelTypes().filter((fuel)=>(state.vehicle?.allowedFuelTypes||[]).includes(fuel.id));selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
-  window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='reset'){root.classList.remove('visible');root.setAttribute('aria-hidden','true');}});
+  window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='reset'){closeEmployeeModal();root.classList.remove('visible');root.setAttribute('aria-hidden','true');}});
   document.getElementById('close-button').addEventListener('click',close);
-  document.addEventListener('keydown',(event)=>{if(event.key==='Escape')close();});
+  document.addEventListener('keydown',(event)=>{if(event.key!=='Escape')return;if(employeeModal){closeEmployeeModal();return;}close();});
   setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});},1000);
   document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 

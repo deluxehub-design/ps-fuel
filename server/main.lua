@@ -41,8 +41,16 @@ local function normalisePlate(value)
 end
 
 local function serverVehicleClass(vehicle, reported)
-    local ok, value = pcall(GetVehicleClass, vehicle)
-    value = ok and tonumber(value) or tonumber(reported)
+    local value
+    if type(GetVehicleClass) == 'function' then
+        local ok, result = pcall(GetVehicleClass, vehicle)
+        if ok then value = tonumber(result) end
+    end
+    if not value and vehicle and vehicle ~= 0 then
+        local ok, state = pcall(function() return Entity(vehicle).state end)
+        if ok and state then value = tonumber(state.psFuelClass) end
+    end
+    value = value or tonumber(reported)
     if not value or value < 0 or value > 22 then return nil end
     return math.floor(value)
 end
