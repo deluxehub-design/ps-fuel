@@ -72,9 +72,7 @@ end
 
 
 local function normaliseVehicleFuelType(value)
-    value = tostring(value or ''):lower()
-    if value == 'petrol' or value == 'diesel' or value == 'electric' then return value end
-    return nil
+    return PSFuelAdvancedShared.NormaliseVehicleFuelFamily(value)
 end
 
 local function vehicleProfileKey(model)
@@ -110,13 +108,10 @@ local function configuredVehicleProfile(model, reportedVehicleClass)
         if class < 0 or class > 22 then class = nil end
     end
 
-    local diesel = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes.diesel or {}
-    local dieselVehicle = (diesel.Models and diesel.Models[model] == true)
-        or (class ~= nil and diesel.AllowedClasses and diesel.AllowedClasses[class] == true)
-
+    local fuelFamily = PSFuelAdvancedShared.DetectVehicleFuelFamily(model, class)
     return {
         modelHash = model,
-        fuelType = dieselVehicle and 'diesel' or 'petrol',
+        fuelType = fuelFamily,
         fastCharge = false,
         source = 'automatic',
     }
@@ -382,6 +377,7 @@ local function vehicleFuelTypeAllowed(vehicle, fuelType, reportedVehicleClass)
     local family = tostring(typeConfig.family or fuelType):lower()
     if family ~= profile.fuelType then
         return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+            and PSFuelAdvancedShared.CanCrossContaminate(profile.fuelType, family)
     end
     if typeConfig.requiresFlexFuel == true and not PSFuelAdvancedShared.IsFlexFuel(GetEntityModel(vehicle)) then
         return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
@@ -433,8 +429,16 @@ local function serialiseFuelTypes(station, player, vehicleClass, includeElectric
     end
 
     table.sort(result, function(a, b)
-        local order = { petrol = 1, premium = 2, diesel = 3, electric = 4, electric_fast = 5 }
-        return (order[a.id] or 99) < (order[b.id] or 99)
+        if a.id == 'electric' then return false end
+        if b.id == 'electric' then return true end
+        if a.id == 'electric_fast' then return false end
+        if b.id == 'electric_fast' then return true end
+        local ac = (PSFuelConfig.FuelTypes or {})[a.id] or {}
+        local bc = (PSFuelConfig.FuelTypes or {})[b.id] or {}
+        local ao = tonumber(ac.sortOrder) or 9999
+        local bo = tonumber(bc.sortOrder) or 9999
+        if ao == bo then return tostring(a.label) < tostring(b.label) end
+        return ao < bo
     end)
     return result
 end

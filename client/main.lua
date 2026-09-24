@@ -139,7 +139,7 @@ local function applyVehicleProfiles(rows)
     for _, profile in ipairs(type(rows) == 'table' and rows or {}) do
         local modelHash = tonumber(profile.modelHash)
         local fuelType = tostring(profile.fuelType or ''):lower()
-        if modelHash and (fuelType == 'petrol' or fuelType == 'diesel' or fuelType == 'electric') then
+        if modelHash and PSFuelAdvancedShared.NormaliseVehicleFuelFamily(fuelType) then
             vehicleProfiles[vehicleProfileKey(modelHash)] = {
                 modelHash = modelHash,
                 modelName = tostring(profile.modelName or modelHash),
@@ -177,14 +177,11 @@ local function configuredVehicleProfile(vehicle)
         }
     end
 
-    local diesel = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes.diesel or {}
     local class = GetVehicleClass(vehicle)
-    local dieselVehicle = (diesel.Models and diesel.Models[model] == true)
-        or (diesel.AllowedClasses and diesel.AllowedClasses[class] == true)
-
+    local fuelFamily = PSFuelAdvancedShared.DetectVehicleFuelFamily(model, class)
     return {
         modelHash = model,
-        fuelType = dieselVehicle and 'diesel' or 'petrol',
+        fuelType = fuelFamily,
         fastCharge = false,
         source = 'automatic',
     }
@@ -416,6 +413,7 @@ local function fuelTypeAllowed(vehicle, fuelType)
     local family = tostring(typeConfig.family or fuelType):lower()
     if family ~= profile.fuelType then
         return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+            and PSFuelAdvancedShared.CanCrossContaminate(profile.fuelType, family)
     end
     if typeConfig.requiresFlexFuel == true and not PSFuelAdvancedShared.IsFlexFuel(GetEntityModel(vehicle)) then
         return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
@@ -474,6 +472,8 @@ local function buildVehicleData(vehicle)
         volumeUnit = volumeUnit,
         diesel = vehicleUsesDiesel(vehicle),
         electric = electric,
+        fuelFamily = profile.fuelType,
+        fuelFamilyLabel = PSFuelAdvancedShared.FuelFamilyLabel(profile.fuelType),
         fastCharge = profile.fastCharge == true,
         fuelProfileSource = profile.source,
         allowedFuelTypes = allowedFuelTypes,
@@ -674,7 +674,7 @@ local function refuelVehicle(vehicle, station, fuelType, options)
         or (tonumber(PSFuelConfig.RefuelSpeed) or 1.0)
     local advancedProfile = PSFuelAdvancedShared.GetTankProfile(GetEntityModel(vehicle), GetVehicleClass(vehicle), electric)
     refuelSpeed = refuelSpeed * (electric and (tonumber(options.chargerSpeedMultiplier) or 1.0) or (tonumber(options.pumpSpeedMultiplier) or 1.0))
-    if not electric and tostring(fuelType):find('diesel', 1, true) and GetVehicleClass(vehicle) == 20 and (((PSFuelConfig.Advanced or {}).Nozzles or {}).HighFlowDieselEnabled) == true then
+    if not electric and PSFuelAdvancedShared.FuelFamily(fuelType) == 'diesel' and GetVehicleClass(vehicle) == 20 and (((PSFuelConfig.Advanced or {}).Nozzles or {}).HighFlowDieselEnabled) == true then
         refuelSpeed = refuelSpeed * (tonumber((((PSFuelConfig.Advanced or {}).Nozzles or {}).TruckHighFlowMultiplier) or 3.0) or 3.0)
     end
     local paymentAccount = options.paymentAccount
@@ -1277,7 +1277,7 @@ RegisterNetEvent('ps-fuel:client:vehicleProfileUpdated', function(profile)
         return
     end
     local fuelType = tostring(profile.fuelType or ''):lower()
-    if fuelType ~= 'petrol' and fuelType ~= 'diesel' and fuelType ~= 'electric' then return end
+    if not PSFuelAdvancedShared.NormaliseVehicleFuelFamily(fuelType) then return end
     vehicleProfiles[key] = {
         modelHash = modelHash,
         modelName = tostring(profile.modelName or modelHash),
@@ -1309,6 +1309,16 @@ local function openVehicleFuelConfiguration(vehicle)
         modelName = tostring(modelHash)
     end
     local current = configuredVehicleProfile(vehicle)
+    local familyOptions = { { value = 'automatic', label = 'Automatic detection / remove override' } }
+    local familyKeys = {}
+    for family, data in pairs(PSFuelConfig.FuelFamilies or {}) do
+        if type(data) == 'table' then familyKeys[#familyKeys + 1] = family end
+    end
+    table.sort(familyKeys, function(a, b) return tostring((PSFuelConfig.FuelFamilies[a] or {}).label or a) < tostring((PSFuelConfig.FuelFamilies[b] or {}).label or b) end)
+    for _, family in ipairs(familyKeys) do
+        familyOptions[#familyOptions + 1] = { value = family, label = (PSFuelConfig.FuelFamilies[family] or {}).label or family }
+    end
+
     local result = lib.inputDialog(('Configure %s'):format(getVehicleLabel(vehicle)), {
         {
             type = 'select',
@@ -1316,12 +1326,7 @@ local function openVehicleFuelConfiguration(vehicle)
             description = 'This applies to every vehicle using this model.',
             required = true,
             default = current.source == 'database' and current.fuelType or 'automatic',
-            options = {
-                { value = 'automatic', label = 'Automatic detection / remove override' },
-                { value = 'petrol', label = 'Petrol and premium' },
-                { value = 'diesel', label = 'Diesel' },
-                { value = 'electric', label = 'Electric' },
-            },
+            options = familyOptions,
         },
         {
             type = 'checkbox',

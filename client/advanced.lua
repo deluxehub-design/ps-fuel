@@ -84,6 +84,9 @@ local function economyEstimate(vehicle)
         local typeCfg = (PSFuelConfig.FuelTypes or {})[fuelType]
         local octane = typeCfg and tonumber(typeCfg.octane)
         local recommended = tonumber(state.recommendedOctane)
+        if typeCfg and tonumber(typeCfg.consumptionMultiplier) then
+            result = result * math.max(0.25, tonumber(typeCfg.consumptionMultiplier))
+        end
         if octane and recommended and octane < recommended then
             result = result * (1 + (recommended-octane) * tonumber((((PSFuelConfig.Advanced or {}).FuelQuality or {}).LowOctaneEfficiencyPenaltyPerPoint) or .01))
         end
@@ -359,11 +362,18 @@ CreateThread(function()
                 if d<tonumber((((PSFuelConfig.Advanced or {}).PriceBoards or {}).DrawDistance) or 35) then
                     sleep=0
                     local live=priceBoards[station.id] or {}
-                    local petrol=tonumber(live.petrol) or (PSFuelConfig.PricePerFuel or 2.0)
-                    local diesel=tonumber(live.diesel) or petrol*((PSFuelConfig.FuelTypes.diesel or {}).priceMultiplier or 1.12)
-                    local premium=tonumber(live.premium) or petrol*((PSFuelConfig.FuelTypes.premium or {}).priceMultiplier or 1.35)
-                    local p,unit=S.FormatUnitPrice(petrol); local d=S.FormatUnitPrice(diesel); local pr=S.FormatUnitPrice(premium)
-                    draw3d(station.coords+vec3(0,0,tonumber((((PSFuelConfig.Advanced or {}).PriceBoards or {}).Height) or 2)),('~b~%s~s~\nRegular %.2f/%s  Premium %.2f/%s  Diesel %.2f/%s'):format(station.label or 'Fuel',p,unit,pr,unit,d,unit))
+                    local boardCfg=((PSFuelConfig.Advanced or {}).PriceBoards or {})
+                    local keys=boardCfg.FuelTypes or { 'petrol', 'premium93', 'e85', 'diesel' }
+                    local lines={('~b~%s~s~'):format(station.label or 'Fuel')}
+                    for _,key in ipairs(keys) do
+                        local typeCfg=(PSFuelConfig.FuelTypes or {})[key]
+                        if typeCfg then
+                            local raw=tonumber(live[key]) or ((PSFuelConfig.PricePerFuel or 2.0)*(tonumber(typeCfg.priceMultiplier) or 1.0))
+                            local price,unit=S.FormatUnitPrice(raw)
+                            lines[#lines+1]=('%s %.2f/%s'):format(typeCfg.label or key,price,unit)
+                        end
+                    end
+                    draw3d(station.coords+vec3(0,0,tonumber(boardCfg.Height or 2)),table.concat(lines,'\n'))
                 end
             end
             Wait(sleep)

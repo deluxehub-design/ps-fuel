@@ -3,8 +3,8 @@ game 'gta5'
 
 name 'ps-fuel'
 author 'PS Development / Techy / PLUUUX Solutions'
-description 'Standalone physical fuel and EV charging system with runtime vehicle profiles, fast charging, stations and ownership'
-version '3.4.0'
+description 'Universal multi-fuel and EV energy system with fuel grades, biofuels, aviation fuels, fleet operations and stations'
+version '3.5.0'
 
 
 ui_page 'web/index.html'

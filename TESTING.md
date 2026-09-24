@@ -1,4 +1,4 @@
-# PS Fuel 3.4.0 staging checklist
+# PS Fuel 3.5.0 staging checklist
 
 Run this on a staging server before production.
 
@@ -94,3 +94,14 @@ Run this on a staging server before production.
 - Attempt siphoning without the required item.
 - Attempt leak repair completion without a valid session.
 - Confirm each is rejected server-side.
+
+## 3.5.0 fuel-family checks
+- Petrol vehicle receives petrol/Benzin/ethanol grades and not Jet/Rocket grades.
+- Diesel vehicle receives diesel/biodiesel/HVO grades.
+- Duster/Mammatus/Cuban800/Velum family vehicles auto-detect as Avgas.
+- Other helicopter/plane classes default to Jet/Turbine fuel.
+- A vehicle configured as Rocket only receives RP-1/Rocket Propellant grades.
+- E85/E100 on a non-flex-fuel petrol vehicle follows the contamination configuration.
+- `/fuelvehicleconfig` lists every configured fuel family.
+- Price board renders `PSFuelConfig.Advanced.PriceBoards.FuelTypes`.
+- `GetFuel` and `SetFuel` remain 0-100 percentage compatible.

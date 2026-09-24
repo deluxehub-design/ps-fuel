@@ -13,6 +13,53 @@ function A.TrimPlate(plate)
     return tostring(plate or ''):gsub('^%s*(.-)%s*$', '%1'):upper()
 end
 
+
+function A.NormaliseVehicleFuelFamily(value)
+    value = tostring(value or ''):lower()
+    if value == 'electric' then return 'electric' end
+    local families = PSFuelConfig.FuelFamilies or {}
+    if type(families[value]) == 'table' then return value end
+    return nil
+end
+
+function A.FuelFamilyLabel(value)
+    value = A.NormaliseVehicleFuelFamily(value) or tostring(value or 'petrol')
+    local cfg = (PSFuelConfig.FuelFamilies or {})[value]
+    return cfg and cfg.label or value
+end
+
+function A.DetectVehicleFuelFamily(model, vehicleClass)
+    model = tonumber(model) or 0
+    vehicleClass = tonumber(vehicleClass)
+
+    local electric = PSFuelConfig.Electric or {}
+    if electric.Enabled ~= false and electric.Models and electric.Models[model] == true then return 'electric' end
+
+    local modelFamilies = PSFuelConfig.VehicleFuelFamilyModels or {}
+    local explicit = A.NormaliseVehicleFuelFamily(modelFamilies[model])
+    if explicit then return explicit end
+
+    -- GTA classes 15 and 16 are helicopters and planes. Piston-aircraft models
+    -- can be overridden to avgas above; the remaining aircraft default to turbine fuel.
+    if vehicleClass == 15 or vehicleClass == 16 then return 'jet' end
+
+    local diesel = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes.diesel or {}
+    if diesel.Models and diesel.Models[model] == true then return 'diesel' end
+    if vehicleClass ~= nil and diesel.AllowedClasses and diesel.AllowedClasses[vehicleClass] == true then return 'diesel' end
+    return 'petrol'
+end
+
+function A.CanCrossContaminate(baseFamily, selectedFamily)
+    baseFamily = A.NormaliseVehicleFuelFamily(baseFamily) or tostring(baseFamily or ''):lower()
+    selectedFamily = A.NormaliseVehicleFuelFamily(selectedFamily) or tostring(selectedFamily or ''):lower()
+    if baseFamily == selectedFamily then return true end
+    local quality = ((PSFuelConfig.Advanced or {}).FuelQuality or {})
+    for _, group in ipairs(quality.CrossContaminationGroups or {}) do
+        if group[baseFamily] == true and group[selectedFamily] == true then return true end
+    end
+    return false
+end
+
 function A.FuelFamily(fuelType)
     fuelType = tostring(fuelType or ''):lower()
     if fuelType == 'electric' or fuelType == 'electric_fast' then return 'electric' end

@@ -1,6 +1,6 @@
-# PS Fuel 3.4.0 — Vehicle Energy, Fleet & Station Operations
+# PS Fuel 3.5.0 — Multi-Fuel, Aviation & Biofuel Update
 
-PS Fuel 3.4.0 is a physical fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
+PS Fuel 3.5.0 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
 
 Repository: `deluxehub-evolvenetwork/ps-fuel`
 
@@ -24,6 +24,25 @@ ensure ps-fuel
 ```
 
 OneSync is required. Do not run another resource that provides `ps-fuel`, `cdn-fuel` or `LegacyFuel` at the same time.
+
+
+## 3.5.0 multi-fuel expansion
+
+3.5.0 expands the fuel-quality system into multiple fuel families while preserving the normal 0–100 compatibility exports used by JG, TGIANN and custom vehicle scripts.
+
+**Petrol / Benzin:** Regular 87, Midgrade 89, Premium 91, Premium 93, Premium 98, Benzin 95, Benzin 98 and Race Fuel 100.
+
+**Ethanol and biofuel:** E10, E15, E85 Bioethanol and E100 Bioethanol. E85/E100 require flex-fuel support when contamination gameplay is enabled.
+
+**Diesel and renewable fuel:** Diesel, Premium Diesel, ULSD, B5/B20/B100 biodiesel, HVO100, Renewable Diesel R99 and Marine Diesel.
+
+**Aviation:** Avgas 100LL, Avgas UL94, Jet A, Jet A-1, SAF 50, SAF 100 and JP-8-style turbine fuel.
+
+**Special:** Methanol M100, Nitromethane Race Fuel, RP-1-style Rocket Kerosene and a generic gameplay Rocket Propellant. These are only valid for vehicle models configured to the matching fuel family.
+
+Fuel compatibility is based on the vehicle's fuel family. Wrong-family fuel contributes to contamination when contamination gameplay is enabled. Fuel grades can define a consumption multiplier so lower-energy-density fuels use more volume without changing the existing percentage-based HUD/garage API.
+
+Piston aircraft listed in `PSFuelConfig.VehicleFuelFamilyModels` automatically use Avgas. Other GTA helicopter/plane classes default to Jet/Turbine fuel. Admins can override any model using `/fuelvehicleconfig`.
 
 ## 3.4.0 highlights
 
@@ -538,7 +557,7 @@ Administrative fleet commands:
 The installed version is read from `fxmanifest.lua`:
 
 ```lua
-version '3.4.0'
+version '3.5.0'
 ```
 
 `version.lua` checks the latest GitHub release from:
@@ -566,7 +585,7 @@ For new code, prefer PS Fuel exports because they update the cache, statebags an
 ## Upgrade from 3.3.0
 
 1. Back up the existing resource and database.
-2. Replace the resource with 3.4.0.
+2. Replace the resource with 3.5.0.
 3. Merge your custom station/model configuration into the new `config.lua`.
 4. Add the new inventory items from `install/items`.
 5. Confirm `ox_lib`, `oxmysql` and `ox_target` start before PS Fuel.

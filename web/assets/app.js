@@ -137,7 +137,7 @@
       <div class="fuel-layout">
         <div>
           <article class="card vehicle-card">
-            <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle')}</span></div>
+            <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : (state.vehicle.fuelFamilyLabel || (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle'))}</span></div>
             <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div><div class="gauge-value">${number(current,1)}% · ${number(state.vehicle.volume,1)} / ${number(state.vehicle.capacity,1)} ${state.vehicle.electric ? 'kWh' : 'L'}</div></div>
           </article>
           <div class="fuel-types">${fuelTypes().map((item) => {

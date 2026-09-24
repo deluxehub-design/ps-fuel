@@ -51,17 +51,14 @@ end
 
 local function baseFuelFamily(model, class, electric)
     if electric then return 'electric' end
-    local diesel = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes.diesel or {}
-    if diesel.Models and diesel.Models[tonumber(model)] == true then return 'diesel' end
-    if diesel.AllowedClasses and diesel.AllowedClasses[tonumber(class)] == true then return 'diesel' end
-    return 'petrol'
+    return S.DetectVehicleFuelFamily(model, class)
 end
 
 local function discord(title, description, fields)
     local dc = cfg('Discord', {})
     if dc.Enabled ~= true or not dc.Webhook or dc.Webhook == '' then return end
     local payload = {
-        username = 'PS Fuel 3.4.0',
+        username = 'PS Fuel 3.5.0',
         embeds = {{
             title = title,
             description = description,
@@ -217,7 +214,7 @@ local function ensureSchema()
     MySQL.query.await([[INSERT IGNORE INTO ps_fuel_settings (setting_key, setting_value) VALUES ('wholesale_multiplier','1.0')]])
     wholesaleMultiplier = tonumber(MySQL.scalar.await("SELECT setting_value FROM ps_fuel_settings WHERE setting_key='wholesale_multiplier'")) or 1.0
     ready = true
-    print('[ps-fuel] Advanced 3.4.0 database ready.')
+    print('[ps-fuel] Advanced 3.5.0 database ready.')
 end
 
 CreateThread(function()

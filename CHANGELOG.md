@@ -1,3 +1,21 @@
+# PS Fuel v3.5.0
+
+## Added
+- Added expanded petrol octanes and grades: 87, 89, 91, 93, 98, Benzin 95/98 and Race Fuel 100.
+- Added E10, E15, E85 and E100 ethanol/bioethanol fuels.
+- Added ULSD, B5/B20/B100 biodiesel, HVO100, Renewable Diesel R99 and Marine Diesel.
+- Added Avgas 100LL, Avgas UL94, Jet A, Jet A-1, SAF 50, SAF 100 and JP-8-style aviation fuel.
+- Added Methanol M100, Nitromethane Race Fuel, RP-1-style Rocket Kerosene and gameplay Rocket Propellant.
+- Added configurable vehicle fuel families and automatic aircraft family detection.
+- Added per-grade consumption multipliers and configurable multi-grade price boards.
+
+## Changed
+- `/fuelvehicleconfig` now supports petrol, diesel, Avgas, Jet/Turbine, Methanol, Nitromethane, Rocket and Electric families.
+- Compatibility checks now use the vehicle fuel family instead of assuming all non-diesel vehicles use petrol.
+- Version checker now reports installed version 3.5.0 through `fxmanifest.lua`.
+
+---
+
 # PS Fuel v3.4.0
 
 Vehicle Energy, Fleet & Station Operations update.
