@@ -364,6 +364,7 @@ local function setFuel(vehicle, amount)
     requestVehicleControl(vehicle, 900)
 
     local plate = trimPlate(vehicle)
+    local oldFuel = tonumber(fuelCache[plate]) or tonumber(GetVehicleFuelLevel(vehicle)) or 0.0
     local fuel = clampFuel(amount)
     fuelCache[plate] = fuel
     local netId = NetworkGetNetworkIdFromEntity(vehicle)
@@ -375,6 +376,9 @@ local function setFuel(vehicle, amount)
         fuelForcedShutdown[plate] = true
     end
     applyFuelValue(vehicle, fuel, true)
+
+    TriggerEvent('ps-fuel:fuelChanged', vehicle, oldFuel, fuel)
+    if empty and oldFuel > shutOffLevel then TriggerEvent('ps-fuel:vehicleEmpty', vehicle, plate) end
 
     if empty then
         fuelForcedShutdown[plate] = true
@@ -404,14 +408,19 @@ local function fuelTypeAllowed(vehicle, fuelType)
     if not DoesEntityExist(vehicle) then return false end
     fuelType = tostring(fuelType or PSFuelConfig.FuelTypes.Default):lower()
     local profile = configuredVehicleProfile(vehicle)
-
     if fuelType == 'electric' then return profile.fuelType == 'electric' end
-    if fuelType == 'electric_fast' then
-        return profile.fuelType == 'electric' and profile.fastCharge == true
-    end
+    if fuelType == 'electric_fast' then return profile.fuelType == 'electric' and profile.fastCharge == true end
     if profile.fuelType == 'electric' then return false end
-    if fuelType == 'diesel' then return profile.fuelType == 'diesel' end
-    return profile.fuelType == 'petrol' and (fuelType == 'petrol' or fuelType == 'premium')
+    local typeConfig = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes[fuelType]
+    if not typeConfig then return false end
+    local family = tostring(typeConfig.family or fuelType):lower()
+    if family ~= profile.fuelType then
+        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+    end
+    if typeConfig.requiresFlexFuel == true and not PSFuelAdvancedShared.IsFlexFuel(GetEntityModel(vehicle)) then
+        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+    end
+    return true
 end
 
 local function getVehicleLabel(vehicle)
@@ -447,12 +456,22 @@ local function buildVehicleData(vehicle)
         end
     end
 
+    local tank = PSFuelAdvancedShared.GetTankProfile(GetEntityModel(vehicle), GetVehicleClass(vehicle), electric)
+    local rawVolume = PSFuelAdvancedShared.PercentToVolume(getFuel(vehicle), tank.capacity)
+    local displayVolume, volumeUnit = PSFuelAdvancedShared.FormatVolume(rawVolume)
+    local displayCapacity = PSFuelAdvancedShared.FormatVolume(tank.capacity)
+
     return {
         netId = netId,
         plate = trimPlate(vehicle),
         label = getVehicleLabel(vehicle),
         fuel = getFuel(vehicle),
         maxFuel = PSFuelConfig.MaxFuel,
+        capacity = displayCapacity,
+        volume = displayVolume,
+        rawCapacity = tank.capacity,
+        rawVolume = rawVolume,
+        volumeUnit = volumeUnit,
         diesel = vehicleUsesDiesel(vehicle),
         electric = electric,
         fastCharge = profile.fastCharge == true,
@@ -537,6 +556,9 @@ local function openRefuelPanel(vehicle, station, context)
         chargerId = context.chargerId,
         physicalNozzle = context.physicalNozzle == true,
         sessionToken = context.sessionToken,
+        pumpSpeedMultiplier = tonumber(data.pumpSpeedMultiplier) or 1.0,
+        chargerSpeedMultiplier = tonumber(data.chargerSpeedMultiplier) or 1.0,
+        stationMaintenance = tonumber(data.stationMaintenance) or 100,
     }
     showFuelUi('refuel', data)
 end
@@ -650,6 +672,11 @@ local function refuelVehicle(vehicle, station, fuelType, options)
             and (tonumber(fastConfig.ChargeSpeed) or tonumber(PSFuelConfig.Electric.ChargeSpeed) or 1.0)
             or (tonumber(PSFuelConfig.Electric.ChargeSpeed) or 1.0))
         or (tonumber(PSFuelConfig.RefuelSpeed) or 1.0)
+    local advancedProfile = PSFuelAdvancedShared.GetTankProfile(GetEntityModel(vehicle), GetVehicleClass(vehicle), electric)
+    refuelSpeed = refuelSpeed * (electric and (tonumber(options.chargerSpeedMultiplier) or 1.0) or (tonumber(options.pumpSpeedMultiplier) or 1.0))
+    if not electric and tostring(fuelType):find('diesel', 1, true) and GetVehicleClass(vehicle) == 20 and (((PSFuelConfig.Advanced or {}).Nozzles or {}).HighFlowDieselEnabled) == true then
+        refuelSpeed = refuelSpeed * (tonumber((((PSFuelConfig.Advanced or {}).Nozzles or {}).TruckHighFlowMultiplier) or 3.0) or 3.0)
+    end
     local paymentAccount = options.paymentAccount
         or (PSFuelNozzle and PSFuelNozzle.GetPaymentAccount and PSFuelNozzle.GetPaymentAccount())
         or (PSFuelConfig.Payment or {}).DefaultAccount
@@ -674,6 +701,8 @@ local function refuelVehicle(vehicle, station, fuelType, options)
     end
 
     isRefuelling = true
+    TriggerEvent('ps-fuel:fuelStarted', vehicle, station.id, fuelType)
+    TriggerServerEvent('ps-fuel:server:fuelStarted', station.id, netId, fuelType)
 
     local purchased, paid = 0.0, 0
     activeWorldFuelDisplay = {
@@ -727,11 +756,14 @@ local function refuelVehicle(vehicle, station, fuelType, options)
             break
         end
 
-        local amount = math.min(refuelSpeed, PSFuelConfig.MaxFuel - fuel)
+        local effectiveSpeed = refuelSpeed
+        if electric then effectiveSpeed = effectiveSpeed * PSFuelAdvancedShared.ChargeCurveMultiplier(fuel, fastCharging) end
+        local amount = math.min(effectiveSpeed, PSFuelConfig.MaxFuel - fuel)
         local response = lib.callback.await(
             'ps-fuel:server:purchaseFuel', false,
             station.id, netId, amount, fuelType, GetVehicleClass(vehicle),
-            paymentAccount, options.chargerId, options.sessionToken
+            paymentAccount, options.chargerId, options.sessionToken,
+            PSFuelAdvancedShared.PercentToVolume(amount, advancedProfile.capacity), trimPlate(vehicle), GetEntityModel(vehicle), fuel
         )
 
         if not response or not response.success then
@@ -750,6 +782,8 @@ local function refuelVehicle(vehicle, station, fuelType, options)
 
     activeWorldFuelDisplay = nil
     isRefuelling = false
+    TriggerEvent('ps-fuel:fuelStopped', vehicle, station.id, fuelType, purchased, paid)
+    TriggerServerEvent('ps-fuel:server:fuelStopped', station.id, netId, fuelType, purchased, paid)
     selectedPumpFuel = nil
 
     if physicalNozzle and PSFuelNozzle and PSFuelNozzle.OnRefuelStop then
@@ -761,6 +795,7 @@ local function refuelVehicle(vehicle, station, fuelType, options)
     end
 
     if purchased > 0 then
+        TriggerEvent('ps-fuel:vehicleRefuelled', vehicle, fuelType, purchased, paid)
         notify(('%s %.1f%% for £%s.'):format(electric and 'Charged' or 'Purchased', purchased, paid), 'success')
     elseif cancelled then
         notify(electric and 'Charging cancelled.' or 'Refuelling cancelled.', 'warning')
@@ -859,6 +894,48 @@ RegisterNUICallback('buyJerryCan', function(data, cb)
     end, data, cb)
 end)
 
+RegisterNUICallback('setPromotion', function(data, cb)
+    local result=lib.callback.await('ps-fuel:server:setPromotion',false,data.stationId,tonumber(data.amount) or 0)
+    cb(result or {success=false,message='Unable to update promotion.'})
+    if result and result.success and data.stationId then openPanel('station',data.stationId) end
+end)
+
+RegisterNUICallback('setSupplier', function(data, cb)
+    safeNuiCallback('setSupplier', function(payload)
+        return lib.callback.await('ps-fuel:server:setSupplier', false, payload.stationId, payload.supplierId)
+    end, data, cb)
+end)
+
+RegisterNUICallback('orderNpcDelivery', function(data, cb)
+    safeNuiCallback('orderNpcDelivery', function(payload)
+        return lib.callback.await('ps-fuel:server:orderNpcDelivery', false, payload.stationId, tonumber(payload.amount))
+    end, data, cb)
+end)
+
+RegisterNUICallback('repairStation', function(data, cb)
+    safeNuiCallback('repairStation', function(payload)
+        return lib.callback.await('ps-fuel:server:repairStation', false, payload.stationId)
+    end, data, cb)
+end)
+
+RegisterNUICallback('upgradeStation', function(data, cb)
+    safeNuiCallback('upgradeStation', function(payload)
+        return lib.callback.await('ps-fuel:server:upgradeStation', false, payload.stationId, payload.upgrade)
+    end, data, cb)
+end)
+
+RegisterNUICallback('addStationEmployee', function(data, cb)
+    safeNuiCallback('addStationEmployee', function(payload)
+        return lib.callback.await('ps-fuel:server:addStationEmployee', false, payload.stationId, payload.identifier, payload.name, payload.role)
+    end, data, cb)
+end)
+
+RegisterNUICallback('removeStationEmployee', function(data, cb)
+    safeNuiCallback('removeStationEmployee', function(payload)
+        return lib.callback.await('ps-fuel:server:removeStationEmployee', false, payload.stationId, payload.identifier)
+    end, data, cb)
+end)
+
 RegisterNUICallback('selectFuelType', function(data, cb)
     safeNuiCallback('selectFuelType', function(payload)
         local session = activeFuelSession
@@ -910,6 +987,8 @@ RegisterNUICallback('selectFuelType', function(data, cb)
             chargerId = session.chargerId,
             physicalNozzle = session.physicalNozzle == true,
             sessionToken = session.sessionToken,
+            pumpSpeedMultiplier = session.pumpSpeedMultiplier,
+            chargerSpeedMultiplier = session.chargerSpeedMultiplier,
             expiresAt = GetGameTimer() + (PSFuelConfig.FuelSelectionTimeout or 120000)
         }
 
@@ -922,6 +1001,8 @@ RegisterNUICallback('selectFuelType', function(data, cb)
                     chargerId = session.chargerId,
                     physicalNozzle = true,
                     sessionToken = session.sessionToken,
+                    pumpSpeedMultiplier = session.pumpSpeedMultiplier,
+                    chargerSpeedMultiplier = session.chargerSpeedMultiplier,
                 })
             else
                 notify(('%s selected. Press E beside the pump to start refuelling.'):format(
@@ -1023,6 +1104,8 @@ CreateThread(function()
                                 chargerId = selection.chargerId,
                                 physicalNozzle = selection.physicalNozzle,
                                 sessionToken = selection.sessionToken,
+                                pumpSpeedMultiplier = selection.pumpSpeedMultiplier,
+                                chargerSpeedMultiplier = selection.chargerSpeedMultiplier,
                             })
                         elseif IsControlJustPressed(0, PSFuelConfig.ChangeFuelTypeKey or 74) then
                             selectedPumpFuel = nil
@@ -1070,6 +1153,16 @@ CreateThread(function()
                 local fuel = getFuel(vehicle)
                 if GetIsVehicleEngineRunning(vehicle) and fuel > 0 then
                     local drain = (PSFuelConfig.BaseDrain + GetVehicleCurrentRpm(vehicle) * PSFuelConfig.RPMMultiplier) * (PSFuelConfig.ClassMultiplier[class] or 1.0)
+                    if PSFuelAdvancedClient and PSFuelAdvancedClient.GetFuelEconomy then
+                        local _, _, l100 = PSFuelAdvancedClient.GetFuelEconomy(vehicle)
+                        local baseline = tonumber((((PSFuelConfig.Advanced or {}).Economy or {}).BaseL100Km) or 10.5) or 10.5
+                        drain = drain * math.max(0.35, l100 / math.max(1.0, baseline))
+                        if GetEntitySpeed(vehicle) < 0.25 then
+                            local profile = PSFuelAdvancedShared.GetTankProfile(GetEntityModel(vehicle), class, false)
+                            local idleRate = class == 20 and tonumber((((PSFuelConfig.Advanced or {}).Economy or {}).TruckIdleLitresPerHour) or 2.4) or tonumber((((PSFuelConfig.Advanced or {}).Economy or {}).IdleLitresPerHour) or 1.1)
+                            drain = math.max(drain, PSFuelAdvancedShared.VolumeToPercent(idleRate * (PSFuelConfig.FuelDrainTick / 3600000), profile.capacity))
+                        end
+                    end
                     setFuel(vehicle, fuel - drain)
                 elseif fuel <= math.max(0.0, tonumber((PSFuelConfig.Safety or {}).ShutOffAtFuel) or 0.0) then
                     setFuel(vehicle, fuel)
@@ -2130,18 +2223,6 @@ CreateThread(function()
         end
     end
 end)
-
-RegisterCommand((PSFuelConfig.Leaks or {}).RepairCommand or 'repairfuelleak', function()
-    local vehicle = cache.vehicle or closestVehicle()
-    if not vehicle then return notify('No vehicle found.', 'error') end
-    local netId = NetworkGetNetworkIdFromEntity(vehicle)
-    local response = lib.callback.await('ps-fuel:server:authoriseLeakRepair', false, netId)
-    if not response or response.success ~= true then
-        return notify(response and response.message or 'You are not authorised to repair fuel leaks.', 'error')
-    end
-    setLeakLevel(vehicle, 0)
-    notify('Fuel tank leak repaired.', 'success')
-end, false)
 
 exports('GetLeakLevel', function(vehicle)
     return leakCache[trimPlate(vehicle)] or 0

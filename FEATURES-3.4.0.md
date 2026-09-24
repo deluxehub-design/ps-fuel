@@ -1,0 +1,60 @@
+# PS Fuel 3.4.0 feature matrix
+
+Implemented in 3.4.0:
+
+- Octane grades: 87, 89, 91, 93 and E85
+- Diesel and premium diesel grades
+- Recommended octane and low-octane performance/economy penalty
+- Persistent wrong-fuel contamination and dilution recovery
+- Configurable wrong-fuel stalling/wear
+- Real tank capacities by class/model
+- Dual truck tanks and high-flow diesel
+- L/100km, UK MPG and US MPG support
+- Estimated vehicle range
+- Persistent trip distance/fuel/cost/idle counters
+- Weather and idle-consumption effects
+- Fleet accounts
+- PIN-capable metadata fuel cards
+- Direct department/job fleet accounts
+- Daily card limits and allowed station/fuel restrictions
+- Fleet card transaction history
+- Loyalty points/tiers and optional loyalty card
+- Per-litre station promotions
+- Live station price boards
+- Wholesale market
+- Supplier contracts with price/speed/reliability/minimum order
+- NPC station deliveries
+- Persistent tanker cargo
+- Server-authorised siphoning
+- Post-pay fuel and drive-offs
+- Dispatch and CCTV event hooks for drive-offs
+- Pump damage charges and station maintenance damage
+- Persistent fuel spills
+- Metadata-backed 5/10/20L portable fuel cans
+- Vehicle/container and vehicle/vehicle transfers
+- Fuel filter, pump, injectors, tank, EV battery and charging-port wear
+- Mechanic replacement items/minigame
+- JG/custom mechanic repair exports
+- Fuel-pump stall faults and tank-wear leaks
+- EV battery health/degradation
+- EV charging taper above configured state of charge
+- Charger occupancy locks
+- EV idle fee support
+- Installable home chargers
+- Installable job/business pumps
+- Private point restrictions by owner/job/grade/plate/fleet company/ACE
+- Mobile service-vehicle refuelling
+- Roadside assistance command/event
+- HUD exports for fuel type/capacity/range/economy/battery/leaks/tanks/fuel-cap position
+- Developer lifecycle events
+- Server validation for refuelling, transfers, siphoning and repairs
+- FuelOS analytics, employees, suppliers, promotions, upgrades and maintenance
+- Discord logging hooks
+- Physical fuel-cap bone/offset support
+- Petrol/diesel/EV/high-flow nozzle behaviour
+- Litres/gallons display support
+- L/100km/UK MPG/US MPG display support
+- Fuel reserve/range warnings
+- Persistent refuel history by plate
+- Item + ox_lib skill/progress leak repair
+- GitHub release version checker reading v3.4.0 from fxmanifest

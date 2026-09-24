@@ -1,4 +1,4 @@
-# PS Fuel 3.3.0 production audit
+# PS Fuel 3.4.0 production audit
 
 ## Release blockers fixed
 

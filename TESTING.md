@@ -1,64 +1,96 @@
-# PS Fuel 3.2.0 Production Test Checklist
+# PS Fuel 3.4.0 staging checklist
+
+Run this on a staging server before production.
 
 ## Startup
 
-- Start `ox_lib`, `oxmysql` and `ox_target` first. If using Qbox, QBCore or ESX, start that framework before `ps-fuel`.
-- Confirm `[ps-fuel] Database ready. Standalone fuel system active.` appears.
-- Confirm `ps_fuel_vehicle_profiles` is created automatically.
-- Confirm no missing NUI, electric model or callback errors appear.
-- Temporarily duplicate a station/charger ID and confirm startup prints a clear CONFIG ERROR instead of loading an invalid layout.
+- Confirm no Lua/NUI errors on resource start.
+- Confirm all `ps_fuel_*` tables are created automatically.
+- Run `psfuelversion` from server console and confirm installed version reports 3.4.0.
 
-## Vehicle configuration
+## Compatibility
 
-- Give the test group `ps-fuel.admin`.
-- Third-eye a vehicle and choose **Configure vehicle fuel type**, or use `/fuelvehicleconfig`.
-- Configure a custom model as electric with fast charging enabled.
-- Confirm all vehicles of that model accept the EV connector after the update without restarting.
-- Disable fast charging and confirm the fast option disappears.
-- Select automatic detection and confirm the database override is removed.
-- Repeat without ACE permission and confirm the menu/action is unavailable or rejected.
+- Verify JG HUD reads fuel normally.
+- Store/retrieve a vehicle through the active garage and confirm fuel persists.
+- If using TGIANN Inventory, use a `fuel_repair_kit` and portable fuel can.
+- Verify `_FUEL_LEVEL`, `fuel` and `recoilFuel` stay synchronized after an external fuel write.
 
-## Physical nozzles
+## Liquid fuel
 
-- Third-eye a native petrol pump and take its nozzle.
-- Confirm the prop attaches to the hand and the rope attaches to the pump.
-- Confirm no pickup or refuelling animation plays.
-- Insert it into a nearby combustion vehicle and select the correct fuel.
-- Confirm plain progress text appears above the vehicle without a background box or stop hint.
-- Confirm X can still safely cancel even though it is not displayed.
-- Stretch the hose beyond the configured distance and confirm safe cleanup.
+- Refuel Regular, Midgrade, Premium, Premium 93, E85 and diesel vehicles.
+- Verify litres/gallons and tank capacity display correctly.
+- Verify high-flow diesel is faster for configured trucks.
+- Intentionally put wrong fuel in a test vehicle and verify contamination/performance behaviour.
+- Add correct fuel and verify configured dilution recovery.
 
-## EV charging
+## Trip computer
 
-- Confirm chargers spawn at configured station coordinates.
-- Take the charging connector and attach it to a configured EV.
-- Confirm standard charging is available.
-- Confirm fast charging appears only for compatible vehicles and chargers.
-- Confirm fast charging increases charge faster and costs more than standard charging.
-- Confirm combustion vehicles reject the EV connector and EVs reject fuel nozzles.
+- Drive at different RPM/throttle levels and compare economy.
+- Leave the engine idling and confirm idle fuel use increases.
+- Test snow/rain weather effects.
+- Run `/fueltrip` and verify range, economy, trip distance, fuel and cost.
+- Reset the trip and confirm persistent counters reset.
 
-## FuelOS
+## Fleet
 
-- Use `/fuelstation` or G at an ownable station.
-- Test station purchase, pricing, withdrawal, ledger, delivery, robbery and fuel-can purchase.
-- Use `/fueladmin` with and without `ps-fuel.admin`.
-- Use `/repairfuelleak` as an authorised mechanic/admin and confirm an unauthorised player is rejected.
+- Create a fleet account.
+- Issue a fuel card.
+- Confirm metadata is present.
+- Test daily limits, fuel restrictions and station restrictions.
+- Confirm valid fleet purchases use the fleet account rather than player money.
 
-## Persistence and compatibility
+## Stations
 
-- Restart the resource and confirm vehicle model profiles remain.
-- Restart the resource and confirm vehicle fuel/station data remains.
-- Test `exports['ps-fuel']:GetFuel` and `SetFuel`.
-- Confirm a resource depending on `cdn-fuel` resolves to this resource.
+- Change retail price and verify price board updates.
+- Change supplier and place NPC delivery order.
+- Add/remove station employee.
+- Buy each station upgrade type.
+- Sell enough fuel to reduce station maintenance, then repair it.
+- Confirm analytics update after fuel/EV purchases, robberies and deliveries.
 
+## Theft and transfer
 
-## Security and recovery
+- Siphon a vehicle with and without `siphon_hose`.
+- Confirm fuel is not removed when the server rejects the attempt.
+- Test portable can fill/pour in both directions.
+- Test vehicle-to-vehicle transfer at valid and invalid distance.
+- Test post-pay drive-off and dispatch hook.
 
-- Attempt to call `completeRobbery` without a valid start token and confirm no payout occurs.
-- Cancel a robbery and confirm the active session is removed.
-- Trigger two simultaneous station withdrawals and confirm only one is paid.
-- Attempt to save fuel for a different plate/network ID and confirm the server rejects it.
-- Complete a delivery without the assigned truck/tanker and confirm it is rejected.
-- Disconnect during a delivery and confirm spawned vehicles are removed.
-- Stop the resource while holding a nozzle and confirm props, ropes, sounds and targets clean up.
-- Confirm all seven `.ogg` files load without NUI 404 errors.
+## Leaks and mechanic wear
+
+- Create a normal and severe leak.
+- Confirm there is no normal `/repairfuelleak` gameplay command.
+- Use `fuel_repair_kit`; fail and pass the minigame.
+- Confirm failed repair does not consume the kit.
+- Confirm successful repair clears the persisted leak and consumes one kit.
+- Reduce fuel pump condition and verify intermittent stall behaviour.
+- Reduce tank condition and verify worn tank can create a leak.
+- Use mechanic replacement items and verify condition restores.
+
+## EV
+
+- Charge below 80% and above 80%; verify taper.
+- Test standard and fast charging.
+- Test two players trying to use the same charger.
+- Reach full charge and verify idle fee handling while the charger session remains occupied.
+- Reduce battery health and verify range reduction.
+- Test snow/cold range penalty.
+
+## Pump/spill
+
+- Drive away with a nozzle attached.
+- Confirm hose returns/detaches, spill appears and station damage event records.
+- Confirm spill expires.
+
+## Private points
+
+- Register a home charger/private pump through the export.
+- Verify job/grade/plate/ACE restrictions.
+- Verify unauthorized players cannot purchase fuel.
+
+## Security
+
+- Attempt oversized refuel/transfer values from a test client event.
+- Attempt siphoning without the required item.
+- Attempt leak repair completion without a valid session.
+- Confirm each is rejected server-side.

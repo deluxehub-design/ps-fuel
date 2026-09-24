@@ -1,68 +1,64 @@
+# PS Fuel v3.4.0
+
+Vehicle Energy, Fleet & Station Operations update.
+
+## Added
+
+- Octane and fuel-quality system with 87/89/91/93, E85 and diesel grades.
+- Persistent wrong-fuel contamination and dilution/recovery behaviour.
+- Configurable real tank capacities by model/class.
+- Truck dual-tank support and high-flow diesel behaviour.
+- Realistic economy calculations, range estimation and trip computer.
+- Weather and engine-idle consumption effects.
+- Persistent fuel history by plate.
+- Fleet accounts and metadata-backed company fuel cards.
+- Loyalty points, tiers and fuel discounts.
+- Wholesale fuel market and supplier contracts.
+- NPC station restocking.
+- Persistent tanker cargo and mobile refuelling.
+- Server-authorised fuel siphoning and vehicle-to-vehicle transfers.
+- Metadata-backed 5L/10L/20L petrol and diesel containers.
+- Post-pay fuel and station drive-off handling.
+- Pump damage and synchronized fuel spills.
+- Persistent fuel filter, pump, injector, tank, EV battery and charging-port condition.
+- Mechanic fuel-system replacement items and JG/custom repair exports.
+- EV battery degradation and charge-rate taper above configured state-of-charge.
+- Charger occupancy and EV idle-fee support.
+- Private/home chargers and restricted business/department pumps.
+- Job/grade/plate/owner/ACE authorization for private points.
+- Roadside assistance integration event and command.
+- FuelOS station analytics, employees, supplier controls, upgrades and maintenance.
+- Live station price boards.
+- Discord logging hooks.
+- New HUD/developer exports and events.
+- Dedicated `version.lua` checker for GitHub releases.
+- TGIANN Inventory/QBox item install snippets.
+
+## Leak repair
+
+- Normal leak repair now uses `fuel_repair_kit` rather than a player chat command.
+- Added normal/severe ox_lib skill checks and progress interaction.
+- Server re-validates item, vehicle, distance and persistent leak state before repair.
+- Repair kit is consumed only after a successful repair.
+- Old leak repair command is disabled by default.
+
+## Security
+
+- Added physical-volume anti-cheat validation to refuelling.
+- Siphoning is validated before fuel is removed.
+- Vehicle-to-vehicle transfers are server-approved.
+- Portable container quantities/capacities are server-controlled.
+- Private pump/charger authorization is server-controlled.
+- Mechanic/leak repair use short-lived server repair sessions.
+
+## Compatibility
+
+- `GetFuel` / `SetFuel` remain percentage based.
+- Lowercase aliases remain available.
+- `AddFuel` / `RemoveFuel` remain available.
+- GTA native, `_FUEL_LEVEL`, `fuel` and `recoilFuel` synchronization remains supported.
+- Existing JG/TGIANN/custom integrations do not need to understand litres/kWh to keep working.
+
 # PS Fuel v3.3.0
 
-## Universal Framework Support
-
-### Added
-- Framework bridge with automatic detection.
-- Qbox support without a hard manifest dependency.
-- QBCore support.
-- ESX Legacy support.
-- Standalone support.
-- vMenu/standalone mode.
-- Custom framework adapter export.
-- Framework-neutral player, identifier, job, grade, duty, money and usable-item APIs.
-- Standalone persistent cash/bank wallet through `ps_fuel_wallets`.
-- Configurable standalone starting cash and bank balances.
-- Configurable logical duty-job groups for robbery/police-count systems.
-- Framework-neutral inventory handling for ox_inventory, QBCore/Qbox inventories and ESX inventory APIs.
-
-### Changed
-- Removed `qbx_core` from the hard resource dependency list.
-- Fuel station payments, station purchases, delivery rewards and robbery payouts now use the framework bridge.
-- Job/grade checks now use the framework bridge.
-- Jerry-can usable-item registration now uses the framework bridge.
-- Client login/logout resets are no longer hard-coded into the main fuel client.
-
-### Compatibility
-- Existing v3.2.2 fuel synchronization, exports and statebag/decorator compatibility remain available.
-- Qbox remains fully supported while no longer being mandatory.
-
-# Changelog
-
-## 3.2.2
-
-- Added expanded compatibility for TGIANN, JG Scripts, LS Trucker Simulator, HUDs, garages and custom vehicle resources.
-- Added bidirectional synchronization between the internal fuel cache, GTA native fuel, `_FUEL_LEVEL`, statebags and compatibility exports.
-- Added external fuel-write detection and first-spawn external fuel restoration.
-- Added compatibility exports and fuel-setting events.
-- Fixed empty-fuel engine recovery and stale cached fuel overwrites.
-- Added configurable external fuel tolerance, statebag name and optional automatic engine restart.
-
-## 3.2.1
-
-- Fixed vehicles remaining undriveable after refuelling from empty.
-- Added explicit empty-fuel state cleanup and network-control recovery.
-- Added bidirectional native/decorator/statebag fuel synchronization for TGIANN, JG and custom resources.
-- Added lowercase, AddFuel/RemoveFuel and vehicle fuel compatibility exports plus set/add fuel events.
-- Kept `fuel`, `recoilFuel`, `_FUEL_LEVEL` and GTA native fuel values synchronized.
-
-## 3.2.0 — Production Release
-
-- Added the missing petrol and EV sound files referenced by the NUI.
-- Added server callback rate limiting and stronger random session tokens.
-- Made vehicle-fuel persistence validate the networked vehicle and actual plate.
-- Replaced the local `/setfuel` command with a server-authorised ACE command.
-- Added robbery session tokens, elapsed-time validation, cancellation and atomic payouts.
-- Made station withdrawals atomic and restore balances if bank payment fails.
-- Added assigned truck/tanker validation to delivery loading and completion.
-- Added delivery and robbery cleanup on disconnect/resource stop.
-- Added database audit logs, useful indexes and configurable retention cleanup.
-- Synchronised configured station labels/capacity into existing database records.
-- Added `LegacyFuel` compatibility provider and explicit OneSync dependency.
-- Added nozzle cleanup on death/logout and target cleanup on resource stop.
-- Added fatal configuration validation for duplicate station/charger IDs and invalid station links.
-- Added safe handling for missing/disabled Jerry Can configuration and optional dispatch events.
-- Hardened dynamic pricing, automatic restocking and configurable reward ranges against invalid values.
-- Restricted fuel-leak repairs to configured jobs or ACE permissions.
-- Removed experimental OAL mode to maximise compatibility with third-party natives and resources.
-- Updated documentation and public-release testing guidance.
+Universal framework release with Qbox, QBCore, ESX, standalone/vMenu and custom framework bridge support.

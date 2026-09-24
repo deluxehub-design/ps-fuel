@@ -1,0 +1,18 @@
+return {
+    home_charger_kit = { name='home_charger_kit', label='Home Charger Kit', weight=5000, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Installs a private EV charger.' },
+    business_pump_kit = { name='business_pump_kit', label='Business Fuel Pump Kit', weight=8000, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Installs a job-restricted private fuel pump.' },
+    ps_fuel_loyalty_card = { name='ps_fuel_loyalty_card', label='Fuel Loyalty Card', weight=10, type='item', image='bank_card.png', unique=true, useable=false, shouldClose=false, description='Loyalty card for PS Fuel points and discounts.' },
+    fuel_repair_kit = { name='fuel_repair_kit', label='Fuel Leak Repair Kit', weight=1800, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Seals damaged fuel lines and minor fuel-tank leaks.' },
+    ps_fuel_card = { name='ps_fuel_card', label='Fleet Fuel Card', weight=10, type='item', image='bank_card.png', unique=true, useable=false, shouldClose=false, description='Company fuel card with spending and station restrictions.' },
+    siphon_hose = { name='siphon_hose', label='Siphon Hose', weight=900, type='item', image='repairkit.png', unique=false, useable=false, shouldClose=true, description='Hose used to transfer fuel from vehicle tanks.' },
+    fuel_can_5l = { name='fuel_can_5l', label='5L Petrol Can', weight=700, type='item', image='jerry_can.png', unique=true, useable=true, shouldClose=true, description='Portable 5 litre petrol container.' },
+    fuel_can_10l = { name='fuel_can_10l', label='10L Petrol Can', weight=900, type='item', image='jerry_can.png', unique=true, useable=true, shouldClose=true, description='Portable 10 litre petrol container.' },
+    fuel_can_20l = { name='fuel_can_20l', label='20L Petrol Can', weight=1200, type='item', image='jerry_can.png', unique=true, useable=true, shouldClose=true, description='Portable 20 litre petrol container.' },
+    diesel_can_20l = { name='diesel_can_20l', label='20L Diesel Can', weight=1200, type='item', image='jerry_can.png', unique=true, useable=true, shouldClose=true, description='Portable 20 litre diesel container.' },
+    fuel_filter = { name='fuel_filter', label='Fuel Filter', weight=500, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Replacement fuel filter.' },
+    fuel_pump = { name='fuel_pump', label='Fuel Pump', weight=1800, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Replacement vehicle fuel pump.' },
+    fuel_injectors = { name='fuel_injectors', label='Fuel Injector Set', weight=1200, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Replacement injector set.' },
+    fuel_tank = { name='fuel_tank', label='Fuel Tank', weight=8500, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Replacement fuel tank.' },
+    ev_battery_module = { name='ev_battery_module', label='EV Battery Module', weight=6500, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Replacement high-voltage battery module.' },
+    charging_port = { name='charging_port', label='EV Charging Port', weight=1200, type='item', image='repairkit.png', unique=false, useable=true, shouldClose=true, description='Replacement EV charging-port assembly.' },
+}

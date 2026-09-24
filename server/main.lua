@@ -26,6 +26,7 @@ local function audit(action, src, player, details)
     if PSFuelDatabase and PSFuelDatabase.Audit then
         PSFuelDatabase.Audit(action, src, getCitizenId(player), details)
     end
+    if PSFuelAdvanced and PSFuelAdvanced.LogAudit then PSFuelAdvanced.LogAudit(action, src, details) end
 end
 
 local function rateLimited(src, key, windowMs, burst)
@@ -337,6 +338,7 @@ local function fuelUnitPrice(station, electric, fuelType)
     local subtotal = (tonumber(PSFuelConfig.PricePerFuel) or 0)
         * (tonumber(station and station.price_multiplier) or 1.0)
         * marketMultiplier
+        * (PSFuelAdvanced and PSFuelAdvanced.GetWholesaleMultiplier and PSFuelAdvanced.GetWholesaleMultiplier() or 1.0)
         * stockMult
         * typeMultiplier
 
@@ -354,6 +356,9 @@ local function canAccessStationTablet(src, player, station, cfg)
     end
 
     local allowed = isOwner or isAdmin or PSFuelConfig.StationTablet.OwnerOnly == false
+    if not allowed and PSFuelAdvanced and PSFuelAdvanced.CanAccessStation then
+        allowed = PSFuelAdvanced.CanAccessStation(src, cfg.id) == true
+    end
     return allowed, isOwner, isAdmin
 end
 
@@ -361,14 +366,19 @@ local function vehicleFuelTypeAllowed(vehicle, fuelType, reportedVehicleClass)
     if vehicle == 0 or GetEntityType(vehicle) ~= 2 then return false end
     fuelType = tostring(fuelType or ''):lower()
     local profile = configuredVehicleProfile(GetEntityModel(vehicle), reportedVehicleClass)
-
     if fuelType == 'electric' then return profile.fuelType == 'electric' end
-    if fuelType == 'electric_fast' then
-        return profile.fuelType == 'electric' and profile.fastCharge == true
-    end
+    if fuelType == 'electric_fast' then return profile.fuelType == 'electric' and profile.fastCharge == true end
     if profile.fuelType == 'electric' then return false end
-    if fuelType == 'diesel' then return profile.fuelType == 'diesel' end
-    return profile.fuelType == 'petrol' and (fuelType == 'petrol' or fuelType == 'premium')
+    local typeConfig = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes[fuelType]
+    if not typeConfig then return false end
+    local family = tostring(typeConfig.family or fuelType):lower()
+    if family ~= profile.fuelType then
+        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+    end
+    if typeConfig.requiresFlexFuel == true and not PSFuelAdvancedShared.IsFlexFuel(GetEntityModel(vehicle)) then
+        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+    end
+    return true
 end
 
 local function serialiseFuelTypes(station, player, vehicleClass, includeElectric, includeFastCharge)
@@ -561,6 +571,9 @@ lib.callback.register('ps-fuel:server:beginNozzleSession', function(src, station
     if electric and not electricChargerByStation(stationId, chargerId) then
         return { success = false, message = 'This electric charger is not configured.' }
     end
+    if electric and PSFuelAdvanced and PSFuelAdvanced.AcquireCharger and not PSFuelAdvanced.AcquireCharger(src, chargerId) then
+        return { success = false, message = 'This charger is already in use.' }
+    end
 
     local player = getPlayer(src)
     if not player then return { success = false, message = 'Player not found.' } end
@@ -574,6 +587,7 @@ lib.callback.register('ps-fuel:server:beginNozzleSession', function(src, station
         chargerId = electric and chargerId or nil,
         paymentAccount = account,
         billingRemainder = 0.0,
+        postPay = PSFuelAdvanced and PSFuelAdvanced.IsPostPay and PSFuelAdvanced.IsPostPay(src) or false,
         expiresAt = os.time() + nozzleSessionTimeout(),
     }
 
@@ -588,6 +602,8 @@ RegisterNetEvent('ps-fuel:server:endNozzleSession', function(token)
     local src = source
     local session = nozzleSessions[src]
     if session and session.token == tostring(token or '') then
+        if session.postPay and PSFuelAdvanced and PSFuelAdvanced.SettlePostPay then PSFuelAdvanced.SettlePostPay(src, session.stationId, session.paymentAccount) end
+        if session.kind == 'electric' and PSFuelAdvanced and PSFuelAdvanced.ReleaseCharger then PSFuelAdvanced.ReleaseCharger(src, session.chargerId) end
         nozzleSessions[src] = nil
     end
 end)
@@ -697,7 +713,7 @@ RegisterNetEvent('ps-fuel:server:saveVehicleFuel', function(netId, plate, fuel, 
 end)
 
 lib.callback.register('ps-fuel:server:purchaseFuel', function(
-    src, stationId, netId, fuelAmount, fuelType, vehicleClass, paymentAccount, chargerId, sessionToken
+    src, stationId, netId, fuelAmount, fuelType, vehicleClass, paymentAccount, chargerId, sessionToken, physicalAmount, plate, modelHash, currentFuel
 )
     if rateLimited(src, 'purchaseFuel', 1000, 8) then
         return { success = false, message = 'Please slow down.' }
@@ -707,6 +723,7 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     local cfg = stationConfig(stationId)
     local station = stations[stationId]
     fuelAmount = tonumber(fuelAmount)
+    physicalAmount = tonumber(physicalAmount) or fuelAmount
     netId = tonumber(netId)
     fuelType = tostring(fuelType or PSFuelConfig.FuelTypes.Default):lower()
     local electric = isElectricFuelType(fuelType)
@@ -726,10 +743,16 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     end
 
     if not player or not cfg or not station or not selectedFuelType or not selectedFuelConfig
-        or not fuelAmount or fuelAmount <= 0 or fuelAmount > 10
+        or not fuelAmount or fuelAmount <= 0 or fuelAmount > 10 or physicalAmount <= 0
     then
         return { success = false, message = 'Invalid fuel purchase.' }
     end
+    local anti = ((PSFuelConfig.Advanced or {}).AntiCheat or {})
+    if anti.Enabled ~= false and physicalAmount > (tonumber(anti.MaxLitresPerTick) or 20.0) then
+        TriggerEvent('ps-fuel:server:suspicious', 'fuel_tick_volume', { source=src, volume=physicalAmount, station=stationId })
+        return { success=false, message='Fuel transaction rejected.' }
+    end
+
     local validSession, nozzleSession = validateNozzleSession(
         src,
         stationId,
@@ -761,6 +784,7 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
         return { success = false, message = 'Vehicle not found.' }
     end
     local actualVehicleClass = serverVehicleClass(vehicle, vehicleClass)
+    if electric and (tonumber(currentFuel) or 0) + fuelAmount >= 99.99 and PSFuelAdvanced and PSFuelAdvanced.MarkChargerFull then PSFuelAdvanced.MarkChargerFull(src, chargerId) end
     if not vehicleFuelTypeAllowed(vehicle, selectedFuelType, actualVehicleClass) then
         return { success = false, message = 'That energy type is not compatible with this vehicle.' }
     end
@@ -777,13 +801,16 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     end
 
     local stock = tonumber(station.stock) or 0
-    if not electric and stock < fuelAmount then
+    if not electric and stock < physicalAmount then
         return { success = false, message = 'This station is out of fuel.' }
     end
 
     local discount = emergencyDiscount(player, actualVehicleClass)
-    local unitPrice = applyDiscount(fuelUnitPrice(station, electric, selectedFuelType), discount)
-    local rawPrice = fuelAmount * unitPrice
+    if PSFuelAdvanced and PSFuelAdvanced.GetLoyaltyDiscount then discount = math.min(90, discount + PSFuelAdvanced.GetLoyaltyDiscount(src)) end
+    local baseUnitPrice = fuelUnitPrice(station, electric, selectedFuelType)
+    local promotion = PSFuelAdvanced and PSFuelAdvanced.GetStationPromotion and PSFuelAdvanced.GetStationPromotion(stationId) or 0
+    local unitPrice = applyDiscount(math.max(0,baseUnitPrice-promotion), discount)
+    local rawPrice = physicalAmount * unitPrice
     local nextRemainder = 0.0
     local price
 
@@ -796,13 +823,17 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     end
 
     local account = nozzleSession and nozzleSession.paymentAccount or paymentAccountAllowed(paymentAccount)
-    local balance = getPlayerMoney(player, account)
-    if balance < price then
-        return { success = false, message = ('You need £%s more in %s.'):format(price - balance, account) }
-    end
-
-    if price > 0 and not removePlayerMoney(player, account, price, 'ps-fuel-purchase') then
-        return { success = false, message = ('Payment failed from %s account.'):format(account) }
+    local postPay = nozzleSession and nozzleSession.postPay == true
+    local fleetPaid, fleetContext = false, nil
+    if not postPay and price > 0 and PSFuelAdvanced and PSFuelAdvanced.TryFleetPayment then fleetPaid, fleetContext = PSFuelAdvanced.TryFleetPayment(src, price, stationId, selectedFuelType) end
+    if postPay then
+        account = 'postpay'
+    elseif fleetPaid then
+        account = 'fleet'
+    else
+        local balance = getPlayerMoney(player, account)
+        if balance < price then return { success = false, message = ('You need £%s more in %s.'):format(price - balance, account) } end
+        if price > 0 and not removePlayerMoney(player, account, price, 'ps-fuel-purchase') then return { success = false, message = ('Payment failed from %s account.'):format(account) } end
     end
 
     local ownershipEnabled = stationOwnershipEnabled(cfg)
@@ -811,24 +842,27 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     local ownerCut = (not electric and ((hasOwner and ownershipEnabled) or keepPublicShare))
         and math.floor(price * (PSFuelConfig.OwnerSharePercent / 100))
         or 0
-    local stockRemoval = electric and 0 or fuelAmount
+    local stockRemoval = electric and 0 or physicalAmount
 
     local affected
     if electric then
         affected = MySQL.update.await([[UPDATE ps_fuel_stations
             SET balance = balance + ?, total_sales = total_sales + ?, total_litres = total_litres + ?
-            WHERE station_id = ?]], { ownerCut, price, fuelAmount, stationId })
+            WHERE station_id = ?]], { ownerCut, price, physicalAmount, stationId })
     else
         affected = MySQL.update.await([[UPDATE ps_fuel_stations
             SET balance = balance + ?, total_sales = total_sales + ?, total_litres = total_litres + ?,
                 stock = stock - ?
             WHERE station_id = ? AND stock >= ?]], {
-                ownerCut, price, fuelAmount, stockRemoval, stationId, stockRemoval
+                ownerCut, price, physicalAmount, stockRemoval, stationId, stockRemoval
             })
     end
 
     if not affected or affected < 1 then
-        if price > 0 then addPlayerMoney(player, account, price, 'ps-fuel-purchase-refund') end
+        if price > 0 then
+            if postPay then
+            elseif fleetPaid and PSFuelAdvanced and PSFuelAdvanced.RefundFleetPayment then PSFuelAdvanced.RefundFleetPayment(fleetContext, price) else addPlayerMoney(player, account, price, 'ps-fuel-purchase-refund') end
+        end
         return { success = false, message = electric and 'The charging transaction failed.' or 'The station ran out of fuel.' }
     end
     if nozzleSession then nozzleSession.billingRemainder = nextRemainder end
@@ -844,16 +878,25 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
         getCitizenId(player),
         playerName,
         price,
-        fuelAmount,
+        physicalAmount,
         selectedFuelConfig.transactionType or ('fuel_' .. selectedFuelType)
     })
 
     station.balance = (tonumber(station.balance) or 0) + ownerCut
     station.total_sales = (tonumber(station.total_sales) or 0) + price
-    station.total_litres = (tonumber(station.total_litres) or 0) + fuelAmount
+    station.total_litres = (tonumber(station.total_litres) or 0) + physicalAmount
     if not electric then
-        station.stock = math.max(0, (tonumber(station.stock) or 0) - fuelAmount)
+        station.stock = math.max(0, (tonumber(station.stock) or 0) - physicalAmount)
     end
+
+    if postPay and PSFuelAdvanced and PSFuelAdvanced.RecordPostPay then PSFuelAdvanced.RecordPostPay(src,{stationId=stationId,price=price,ownerCut=ownerCut,volume=physicalAmount,account=nozzleSession and nozzleSession.paymentAccount or paymentAccount,fuelType=selectedFuelType}) end
+
+    local resolvedPlate = normalisePlate(plate or GetVehicleNumberPlateText(vehicle))
+    if PSFuelAdvanced and PSFuelAdvanced.RecordPurchase then
+        PSFuelAdvanced.RecordPurchase({ source=src, stationId=stationId, plate=resolvedPlate, model=tonumber(modelHash) or GetEntityModel(vehicle), class=actualVehicleClass, fuelType=selectedFuelType, volume=physicalAmount, percent=fuelAmount, price=price, playerName=playerName, currentFuel=tonumber(currentFuel) or 0, baseFuelType=configuredVehicleProfile(GetEntityModel(vehicle), actualVehicleClass).fuelType })
+    end
+    TriggerEvent('ps-fuel:stationStockChanged', stationId, station.stock, station.capacity)
+    TriggerEvent('ps-fuel:paymentCompleted', src, stationId, price, account, selectedFuelType, physicalAmount)
 
     return {
         success = true,
@@ -965,6 +1008,7 @@ lib.callback.register('ps-fuel:server:getStationPanel', function(src, stationId)
     if not allowed then return nil end
     local recent = MySQL.query.await([[SELECT transaction_type, amount_paid, fuel_amount, player_name, created_at
         FROM ps_fuel_transactions WHERE station_id = ? ORDER BY id DESC LIMIT 20]], { stationId }) or {}
+    local advanced = PSFuelAdvanced and PSFuelAdvanced.GetStationAdvanced and PSFuelAdvanced.GetStationAdvanced(stationId) or {}
 
     return {
         id = stationId,
@@ -988,7 +1032,9 @@ lib.callback.register('ps-fuel:server:getStationPanel', function(src, stationId)
         fuelTypes = serialiseFuelTypes(station, player, nil, true, ((PSFuelConfig.Electric or {}).FastCharge or {}).Enabled ~= false),
         deliveriesEnabled = PSFuelConfig.Deliveries.Enabled and stationDeliveryEnabled(cfg),
         robberiesEnabled = PSFuelConfig.Robberies.Enabled,
-        transactions = recent
+        transactions = recent,
+        advanced = advanced,
+        wholesaleMultiplier = PSFuelAdvanced and PSFuelAdvanced.GetWholesaleMultiplier and PSFuelAdvanced.GetWholesaleMultiplier() or 1.0
     }
 end)
 
@@ -1048,6 +1094,8 @@ lib.callback.register('ps-fuel:server:getRefuelPanel', function(
     if not isNearFuelSource(src, cfg, electricSource, chargerId) then return nil end
 
     local account = nozzleSession and nozzleSession.paymentAccount or paymentAccountAllowed(nil)
+    local advStation = PSFuelAdvanced and PSFuelAdvanced.GetStationAdvanced and PSFuelAdvanced.GetStationAdvanced(stationId) or {}
+    local advRow = advStation.station or {}
     return {
         id = stationId,
         label = station.label or cfg.label,
@@ -1061,6 +1109,9 @@ lib.callback.register('ps-fuel:server:getRefuelPanel', function(
         discountPercent = emergencyDiscount(player, vehicleClass),
         electric = electricVehicle,
         fastCharge = fastCharge,
+        pumpSpeedMultiplier = (1.0 + (tonumber(advRow.pump_level) or 0) * 0.20) * math.max(0.40, (tonumber(advRow.maintenance) or 100) / 100),
+        chargerSpeedMultiplier = (1.0 + (tonumber(advRow.charger_level) or 0) * 0.20) * math.max(0.40, (tonumber(advRow.maintenance) or 100) / 100),
+        stationMaintenance = tonumber(advRow.maintenance) or 100,
     }
 end)
 
@@ -1096,6 +1147,7 @@ lib.callback.register('ps-fuel:server:buyStation', function(src, stationId)
     end
 
     station.owner_citizenid, station.owner_name = getCitizenId(player), ownerName
+    audit('station_purchased', src, player, { stationId=stationId, price=price })
     return { success = true, message = 'Fuel station purchased.' }
 end)
 
@@ -1255,7 +1307,9 @@ RegisterCommand('setfuel', function(src, args)
     end
     local amount = tonumber(args[1])
     if not amount then return notify(src, 'Usage: /setfuel 100 near or inside a vehicle.', 'error') end
-    TriggerClientEvent('ps-fuel:client:adminSetFuel', src, math.max(0.0, math.min(PSFuelConfig.MaxFuel, amount)))
+    local setAmount=math.max(0.0, math.min(PSFuelConfig.MaxFuel, amount))
+    TriggerClientEvent('ps-fuel:client:adminSetFuel', src, setAmount)
+    audit('admin_setfuel', src, getPlayer(src), { amount=setAmount })
 end, false)
 
 
@@ -1594,6 +1648,15 @@ lib.callback.register('ps-fuel:server:markTankerLoaded', function(src, stationId
 
     delivery.stage = 'return_to_station'
     delivery.tankerLoaded = true
+    if PSFuelAdvanced then
+        local trailerPlate = normalisePlate(GetVehicleNumberPlateText(trailer))
+        if trailerPlate ~= '' then
+            local capacity = tonumber((((PSFuelConfig.Advanced or {}).Tankers or {}).DefaultCapacity) or 30000) or 30000
+            local amount = math.min(capacity, tonumber(PSFuelConfig.Deliveries.DeliveryAmount) or 2500)
+            exports['ps-fuel']:SetTankerCargo(trailerPlate, 'diesel', amount, capacity)
+            delivery.tankerPlate = trailerPlate
+        end
+    end
 
     return {
         success = true,
@@ -1650,6 +1713,11 @@ lib.callback.register('ps-fuel:server:completeDelivery', function(src, stationId
     local capacity = tonumber(station.capacity) or tonumber(cfg.capacity) or 10000
     local stock = tonumber(station.stock) or 0
     local deliveryAmount = tonumber(PSFuelConfig.Deliveries.DeliveryAmount) or 2500
+    if PSFuelAdvanced and PSFuelAdvanced.GetStationAdvanced then
+        local adv=PSFuelAdvanced.GetStationAdvanced(stationId)
+        local level=tonumber(adv.station and adv.station.tanker_level) or 0
+        deliveryAmount=deliveryAmount*(1.0+level*0.25)
+    end
     local amount = math.min(deliveryAmount, math.max(0, capacity - stock))
 
     if amount <= 0 then
@@ -1725,7 +1793,9 @@ lib.callback.register('ps-fuel:server:startRobbery', function(src, stationId)
         return { success = false, message = 'This station was robbed recently.' }
     end
 
-    local duration = math.max(5000, math.floor(tonumber(PSFuelConfig.Robberies.Duration) or 45000))
+    local securityLevel=0
+    if PSFuelAdvanced and PSFuelAdvanced.GetStationAdvanced then local adv=PSFuelAdvanced.GetStationAdvanced(stationId); securityLevel=tonumber(adv.station and adv.station.security_level) or 0 end
+    local duration = math.max(5000, math.floor((tonumber(PSFuelConfig.Robberies.Duration) or 45000) * (1.0 + securityLevel * 0.18)))
     local token = PSFuelSecurity.Token(src, 'robbery')
     activeRobberies[src] = {
         token = token,
@@ -1774,10 +1844,13 @@ lib.callback.register('ps-fuel:server:completeRobbery', function(src, stationId,
     local maximumReward = math.max(0, math.floor(tonumber((PSFuelConfig.Robberies or {}).MaxReward) or 12000))
     if maximumReward < minimumReward then minimumReward, maximumReward = maximumReward, minimumReward end
     local maximumPercent = math.max(0, math.min(100, tonumber((PSFuelConfig.Robberies or {}).MaxStationBalancePercent) or 35))
-    local reward = math.min(
+    local securityLevel=0
+    if PSFuelAdvanced and PSFuelAdvanced.GetStationAdvanced then local adv=PSFuelAdvanced.GetStationAdvanced(stationId); securityLevel=tonumber(adv.station and adv.station.security_level) or 0 end
+    local securityReduction=math.max(0.35,1.0-securityLevel*0.12)
+    local reward = math.floor(math.min(
         math.random(minimumReward, maximumReward),
         math.floor(balance * (maximumPercent / 100))
-    )
+    ) * securityReduction)
     if reward <= 0 then
         activeRobberies[src] = nil
         return { success = false, message = 'The station safe is empty.' }
@@ -1801,6 +1874,10 @@ lib.callback.register('ps-fuel:server:completeRobbery', function(src, stationId,
     end
 
     station.balance = math.max(0, balance - reward)
+    if PSFuelAdvanced then
+        MySQL.insert.await('INSERT IGNORE INTO ps_fuel_station_advanced (station_id) VALUES (?)', { stationId })
+        MySQL.update.await('UPDATE ps_fuel_station_advanced SET robbery_losses=robbery_losses+? WHERE station_id=?', { reward, stationId })
+    end
     MySQL.insert.await([[INSERT INTO ps_fuel_transactions
         (station_id, citizenid, player_name, amount_paid, fuel_amount, transaction_type)
         VALUES (?, ?, ?, ?, 0, 'robbery')]],

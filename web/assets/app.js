@@ -59,11 +59,11 @@
         <div>
           <article class="card vehicle-card">
             <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle')}</span></div>
-            <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div><div class="gauge-value">${number(current,1)}%</div></div>
+            <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div><div class="gauge-value">${number(current,1)}% · ${number(state.vehicle.volume,1)} / ${number(state.vehicle.capacity,1)} ${state.vehicle.electric ? 'kWh' : 'L'}</div></div>
           </article>
           <div class="fuel-types">${fuelTypes().map((item) => {
             const enabled = allowed().has(item.id);
-            return `<button class="fuel-type ${selectedFuel === item.id ? 'selected' : ''} ${enabled ? '' : 'disabled'}" data-fuel="${esc(item.id)}" ${enabled ? '' : 'disabled'} style="--fuel-accent:${esc(item.accent || '#1ee8ef')}"><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small><div class="fuel-price">${money(item.unitPrice)} / 1%</div></button>`;
+            return `<button class="fuel-type ${selectedFuel === item.id ? 'selected' : ''} ${enabled ? '' : 'disabled'}" data-fuel="${esc(item.id)}" ${enabled ? '' : 'disabled'} style="--fuel-accent:${esc(item.accent || '#1ee8ef')}"><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small><div class="fuel-price">${money(item.unitPrice)} / ${state.vehicle?.electric ? 'kWh' : 'L'}</div></button>`;
           }).join('')}</div>
         </div>
         <article class="card amount-panel">
@@ -71,7 +71,7 @@
           <div class="summary">
             <div class="summary-row"><span>Selected fuel</span><strong>${esc(fuel.label)}</strong></div>
             <div class="summary-row"><span>${state.vehicle.electric ? 'Battery charge' : 'Current fuel'}</span><strong>${number(current,1)}%</strong></div>
-            <div class="summary-row"><span>Unit rate</span><strong>${money(fuel.unitPrice)} / 1%</strong></div>
+            <div class="summary-row"><span>Unit rate</span><strong>${money(fuel.unitPrice)} / ${state.vehicle?.electric ? 'kWh' : 'L'}</strong></div>
           </div>
           <p style="color:var(--muted);font-size:10px;line-height:1.7;margin:16px 0">${state.physicalNozzle ? `The connected ${state.vehicle.electric ? 'charging connector' : 'fuel nozzle'} will start automatically after selection. Live progress appears above the vehicle.` : 'Selecting a fuel type closes the terminal. Insert the nozzle into the vehicle to begin; live progress appears above it.'}</p>
           <button class="primary wide" id="select-fuel" ${!selectedFuel || current >= (Number(state.vehicle.maxFuel) || 100) ? 'disabled' : ''}>SELECT ${esc(String(fuel.label || 'FUEL').toUpperCase())}</button>
@@ -82,18 +82,46 @@
   function overviewView() {
     const stockPercent = Math.min(100, ((Number(state.stock)||0) / Math.max(1,Number(state.capacity)||1))*100);
     return `${pageHeader(state.label || 'Fuel station', `Owned by ${state.owner || 'Unknown'} · management terminal`, 'Owner access')}
-      ${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['ledger','Ledger']])}
-      <div class="grid stats">${stat('Station balance', money(state.balance), 'Available to withdraw')}${stat('Lifetime revenue', money(state.totalSales), 'Gross station sales')}${stat('Fuel sold', `${number(state.totalFuel,1)}%`, 'Recorded volume')}${stat('Price multiplier', `${number(state.priceMultiplier || 1,2)}×`, 'Owner retail rate')}</div>
+      ${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}
+      <div class="grid stats">${stat('Station balance', money(state.balance), 'Available to withdraw')}${stat('Lifetime revenue', money(state.totalSales), 'Gross station sales')}${stat('Fuel sold', `${number(state.totalFuel,1)} L`, 'Recorded volume')}${stat('Price multiplier', `${number(state.priceMultiplier || 1,2)}×`, 'Owner retail rate')}</div>
       <div class="grid two" style="margin-top:12px"><article class="card"><div class="section-title"><h2>Fuel reserves</h2><span>${number(stockPercent,0)}% capacity</span></div><div class="gauge"><div class="gauge-fill" style="width:${stockPercent}%"></div></div><div class="summary-row"><span>Current stock</span><strong>${number(state.stock,0)} / ${number(state.capacity,0)}</strong></div><div class="summary-row"><span>Market multiplier</span><strong>${number(state.marketMultiplier || 1,2)}×</strong></div></article><article class="card"><div class="section-title"><h2>Owner controls</h2><span>Protected</span></div><p style="color:var(--muted);font-size:10px;line-height:1.6">Only the station owner or an authorised administrator can open this management tablet. Public players retain access to the pump terminal only.</p><button class="secondary wide" id="refresh-station">Synchronise station data</button></article></div>`;
   }
 
   function operationsView() {
-    return `${pageHeader(state.label || 'Fuel station','Pricing, banking and station operations','Owner controls')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['ledger','Ledger']])}<div class="grid two"><article class="card"><div class="section-title"><h2>Retail pricing</h2><span>0.50× – 2.00×</span></div><label class="form-label" for="multiplier">Station price multiplier</label><input class="text-input" id="multiplier" type="number" min="0.5" max="2" step="0.05" value="${Number(state.priceMultiplier)||1}"/><button class="primary wide" id="save-multiplier">Save pricing</button><button class="secondary wide" id="withdraw">Withdraw ${money(state.balance)}</button></article><article class="card"><div class="section-title"><h2>Station services</h2><span>Live actions</span></div><div class="action-list"><div class="action"><div class="action-copy"><strong>Fuel delivery</strong><small>Collect a tanker and replenish station stock.</small></div><button class="secondary" id="start-delivery" ${state.deliveriesEnabled ? '' : 'disabled'}>Start</button></div><div class="action"><div class="action-copy"><strong>Jerry can</strong><small>Purchase portable emergency fuel for ${money(state.jerryCanPrice)}.</small></div><button class="secondary" id="buy-jerry">Buy</button></div><div class="action"><div class="action-copy"><strong>Security simulation</strong><small>Start the configured station robbery flow.</small></div><button class="danger" id="start-robbery" ${state.robberiesEnabled ? '' : 'disabled'}>Start</button></div></div></article></div>`;
+    return `${pageHeader(state.label || 'Fuel station','Pricing, banking and station operations','Owner controls')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}<div class="grid two"><article class="card"><div class="section-title"><h2>Retail pricing</h2><span>0.50× – 2.00×</span></div><label class="form-label" for="multiplier">Station price multiplier</label><input class="text-input" id="multiplier" type="number" min="0.5" max="2" step="0.05" value="${Number(state.priceMultiplier)||1}"/><button class="primary wide" id="save-multiplier">Save pricing</button><button class="secondary wide" id="withdraw">Withdraw ${money(state.balance)}</button></article><article class="card"><div class="section-title"><h2>Station services</h2><span>Live actions</span></div><div class="action-list"><div class="action"><div class="action-copy"><strong>Fuel delivery</strong><small>Collect a tanker and replenish station stock.</small></div><button class="secondary" id="start-delivery" ${state.deliveriesEnabled ? '' : 'disabled'}>Start</button></div><div class="action"><div class="action-copy"><strong>Jerry can</strong><small>Purchase portable emergency fuel for ${money(state.jerryCanPrice)}.</small></div><button class="secondary" id="buy-jerry">Buy</button></div><div class="action"><div class="action-copy"><strong>Security simulation</strong><small>Start the configured station robbery flow.</small></div><button class="danger" id="start-robbery" ${state.robberiesEnabled ? '' : 'disabled'}>Start</button></div></div></article></div>`;
+  }
+
+  function advancedView() {
+    const adv = state.advanced || {};
+    const stationAdv = adv.station || {};
+    const analytics = adv.analytics || {};
+    const employees = Array.isArray(adv.employees) ? adv.employees : [];
+    const breakdown = Array.isArray(adv.fuelBreakdown) ? adv.fuelBreakdown : [];
+    const level = (key) => Number(stationAdv[key] || 0);
+    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.4')}
+      ${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}
+      <div class="grid stats">${stat('Transactions',number(analytics.transactions),'Lifetime station sales')}${stat('Average sale',money(analytics.average_transaction),'Average transaction')}${stat('Wholesale',`${number(adv.wholesaleMultiplier || state.wholesaleMultiplier || 1,2)}×`,'Network wholesale market')}${stat('Maintenance',`${number(stationAdv.maintenance || 100,1)}%`,'Pump and charger condition')}</div>
+      <div class="grid two" style="margin-top:12px">
+        <article class="card"><div class="section-title"><h2>Supplier contract</h2><span>${esc(stationAdv.supplier_id || 'localfuel')}</span></div>
+          <label class="form-label">Supplier</label><select class="text-input" id="supplier"><option value="localfuel">Local Fuel Distribution</option><option value="budget">Budget Petro Logistics</option><option value="premium">Premium Energy Logistics</option></select>
+          <button class="primary wide" id="save-supplier">Save supplier</button><label class="form-label" style="margin-top:12px">Promotion off per litre</label><input class="text-input" id="promotion" type="number" min="0" max="1" step="0.01" value="${number(stationAdv.promotion_per_litre || 0,2)}"/><button class="secondary wide" id="save-promotion">Save promotion</button>
+          <label class="form-label" style="margin-top:12px">NPC delivery amount</label><input class="text-input" id="npc-amount" type="number" min="500" step="250" value="1500"/>
+          <button class="secondary wide" id="npc-delivery">Order automated delivery</button>
+          <button class="secondary wide" id="repair-station">Service station equipment</button>
+        </article>
+        <article class="card"><div class="section-title"><h2>Station upgrades</h2><span>Permanent</span></div>
+          <div class="action-list">${[['storage','Storage',level('storage_level')],['pumps','Pumps',level('pump_level')],['chargers','EV chargers',level('charger_level')],['security','Security',level('security_level')],['tanker','Tanker capacity',level('tanker_level')]].map(([id,label,lvl])=>`<div class="action"><div class="action-copy"><strong>${label}</strong><small>Current level ${lvl}</small></div><button class="secondary upgrade-button" data-upgrade="${id}">Upgrade</button></div>`).join('')}</div>
+        </article>
+      </div>
+      <div class="grid two" style="margin-top:12px">
+        <article class="card"><div class="section-title"><h2>Employees</h2><span>${employees.length}</span></div>${employees.length ? employees.map(e=>`<div class="transaction"><div><strong>${esc(e.name || e.identifier)}</strong><small>${esc(e.role || 'employee')}</small></div><button class="danger remove-employee" data-identifier="${esc(e.identifier)}">Remove</button></div>`).join('') : '<div class="empty">No station employees.</div>'}<button class="secondary wide" id="add-employee">Add employee</button></article>
+        <article class="card"><div class="section-title"><h2>Fuel mix</h2><span>Analytics</span></div>${breakdown.length ? breakdown.map(row=>`<div class="summary-row"><span>${esc(String(row.transaction_type || '').replace(/_/g,' '))}</span><strong>${number(row.volume,1)} · ${money(row.revenue)}</strong></div>`).join('') : '<div class="empty">No fuel analytics yet.</div>'}</article>
+      </div>`;
   }
 
   function ledgerView() {
     const rows = Array.isArray(state.transactions) ? state.transactions : [];
-    return `${pageHeader(state.label || 'Fuel station','Latest station transactions and operational records','Live ledger')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['ledger','Ledger']])}<article class="card"><div class="section-title"><h2>Recent transactions</h2><span>${rows.length} records</span></div><div class="transactions">${rows.length ? rows.map((row) => `<div class="transaction"><div><strong>${esc(String(row.transaction_type || 'transaction').replaceAll('_',' ').toUpperCase())}</strong><small>${esc(row.player_name || 'System')} · ${esc(row.created_at || '')}</small></div><span>${number(row.fuel_amount,1)}%</span><span class="amount">${money(row.amount_paid)}</span></div>`).join('') : '<div class="empty">No transactions have been recorded.</div>'}</div></article>`;
+    return `${pageHeader(state.label || 'Fuel station','Latest station transactions and operational records','Live ledger')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}<article class="card"><div class="section-title"><h2>Recent transactions</h2><span>${rows.length} records</span></div><div class="transactions">${rows.length ? rows.map((row) => `<div class="transaction"><div><strong>${esc(String(row.transaction_type || 'transaction').replace(/_/g,' ').toUpperCase())}</strong><small>${esc(row.player_name || 'System')} · ${esc(row.created_at || '')}</small></div><span>${number(row.fuel_amount,1)} units</span><span class="amount">${money(row.amount_paid)}</span></div>`).join('') : '<div class="empty">No transactions have been recorded.</div>'}</div></article>`;
   }
 
   function adminView() {
@@ -107,8 +135,9 @@
     footerStation.textContent = state.label ? String(state.label).toUpperCase() : 'CONNECTED';
     if (mode === 'admin') app.innerHTML = adminView();
     else if (mode === 'refuel') app.innerHTML = refuelView(true);
-    else if (activeTab === 'refuel') app.innerHTML = `${pageHeader(state.label || 'Fuel station','Select a compatible fuel type, then use the physical pump','Fuel selector')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['ledger','Ledger']])}${refuelView(false)}`;
+    else if (activeTab === 'refuel') app.innerHTML = `${pageHeader(state.label || 'Fuel station','Select a compatible fuel type, then use the physical pump','Fuel selector')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}${refuelView(false)}`;
     else if (activeTab === 'operations') app.innerHTML = operationsView();
+    else if (activeTab === 'advanced') app.innerHTML = advancedView();
     else if (activeTab === 'ledger') app.innerHTML = ledgerView();
     else app.innerHTML = overviewView();
     bind();
@@ -135,6 +164,13 @@
     document.getElementById('buy-jerry')?.addEventListener('click', async () => {const response=await post('buyJerryCan',{stationId:state.id});toast(response?.message || (response?.success?'Jerry can purchased.':'Purchase failed.'),response?.success?'success':'error');});
     document.getElementById('start-delivery')?.addEventListener('click', async () => {const response=await post('startDelivery',{stationId:state.id});toast(response?.message || (response?.success?'Delivery started.':'Delivery failed.'),response?.success?'success':'error');});
     document.getElementById('start-robbery')?.addEventListener('click', async () => {const response=await post('startRobbery',{stationId:state.id});toast(response?.message || (response?.success?'Security event started.':'Action failed.'),response?.success?'success':'error');});
+    document.getElementById('save-supplier')?.addEventListener('click', async () => {const response=await post('setSupplier',{stationId:state.id,supplierId:document.getElementById('supplier').value});toast(response?.message||'Supplier update failed.',response?.success?'success':'error');if(response?.success)refreshStation();});
+    document.getElementById('save-promotion')?.addEventListener('click', async () => {const response=await post('setPromotion',{stationId:state.id,amount:Number(document.getElementById('promotion').value)});toast(response?.message||'Promotion update failed.',response?.success?'success':'error');if(response?.success)refreshStation();});
+    document.getElementById('npc-delivery')?.addEventListener('click', async () => {const response=await post('orderNpcDelivery',{stationId:state.id,amount:Number(document.getElementById('npc-amount').value)});toast(response?.message||'Delivery order failed.',response?.success?'success':'error');});
+    document.getElementById('repair-station')?.addEventListener('click', async () => {const response=await post('repairStation',{stationId:state.id});toast(response?.message||'Maintenance failed.',response?.success?'success':'error');if(response?.success)refreshStation();});
+    app.querySelectorAll('.upgrade-button').forEach((button)=>button.addEventListener('click',async()=>{const response=await post('upgradeStation',{stationId:state.id,upgrade:button.dataset.upgrade});toast(response?.message||'Upgrade failed.',response?.success?'success':'error');if(response?.success)refreshStation();}));
+    app.querySelectorAll('.remove-employee').forEach((button)=>button.addEventListener('click',async()=>{const response=await post('removeStationEmployee',{stationId:state.id,identifier:button.dataset.identifier});toast(response?.message||'Employee update failed.',response?.success?'success':'error');if(response?.success)refreshStation();}));
+    document.getElementById('add-employee')?.addEventListener('click',async()=>{const identifier=window.prompt('Player identifier / citizen ID');if(!identifier)return;const name=window.prompt('Employee display name')||identifier;const role=window.prompt('Role: employee or manager')||'employee';const response=await post('addStationEmployee',{stationId:state.id,identifier,name,role});toast(response?.message||'Employee update failed.',response?.success?'success':'error');if(response?.success)refreshStation();});
   }
   async function refreshStation(){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;toast('Station data synchronised.','success');render();}else toast(response?.message||'Refresh failed.','error');}
   function open(payload){mode=payload.mode||'refuel';state=payload.data||{};activeTab='overview';const valid=fuelTypes().filter((fuel)=>(state.vehicle?.allowedFuelTypes||[]).includes(fuel.id));selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}

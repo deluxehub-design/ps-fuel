@@ -107,6 +107,12 @@ local function attachToHand()
 end
 
 local function findVehicleBone(vehicle)
+    if (((PSFuelConfig.Advanced or {}).PhysicalFuelCaps or {}).Enabled) == true then
+        for _, name in ipairs({ 'petrolcap', 'petroltank' }) do
+            local bone = GetEntityBoneIndexByName(vehicle, name)
+            if bone and bone ~= -1 then return bone, name end
+        end
+    end
     for _, name in ipairs(config.VehicleBones or {}) do
         local bone = GetEntityBoneIndexByName(vehicle, name)
         if bone and bone ~= -1 then return bone, name end
@@ -118,6 +124,8 @@ local function attachToVehicle(vehicle)
     if not state.prop or not DoesEntityExist(state.prop) or not DoesEntityExist(vehicle) then return false end
     local attachment = (config.VehicleAttachment or {})[state.kind] or {}
     local bone = findVehicleBone(vehicle)
+    local custom = ((((PSFuelConfig.Advanced or {}).PhysicalFuelCaps or {}).ModelOffsets) or {})[GetEntityModel(vehicle)]
+    if custom then attachment = { x=custom.x or 0, y=custom.y or 0, z=custom.z or 0, rx=custom.rx or 0, ry=custom.ry or 90, rz=custom.rz or 0 }; bone=0 end
 
     DetachEntity(state.prop, true, true)
     AttachEntityToEntity(
@@ -510,6 +518,11 @@ end
 function PSFuelNozzle.GetSessionToken()
     return state.sessionToken
 end
+
+function PSFuelNozzle.GetSourceEntity() return state.sourceEntity end
+function PSFuelNozzle.GetVehicle() return state.vehicle end
+function PSFuelNozzle.GetStation() return state.station end
+function PSFuelNozzle.IsRefuelling() return state.refuelling == true end
 
 function PSFuelNozzle.IsReadyFor(vehicle, kind)
     return state.kind ~= nil

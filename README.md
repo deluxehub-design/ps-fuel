@@ -1,57 +1,20 @@
-# PS Fuel 3.3.0 — Universal Framework Release
+# PS Fuel 3.4.0 — Vehicle Energy, Fleet & Station Operations
 
-This is the Fuel Network separated from `ps-tablet`. It does not require the tablet and includes its own FuelOS station-management and fuel-selection NUI.
+PS Fuel 3.4.0 is a physical fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
 
-## Features
+Repository: `deluxehub-evolvenetwork/ps-fuel`
 
-- Physical petrol, diesel and premium nozzles
-- Rope hoses and configurable maximum hose distance
-- Custom electric chargers and charging connectors
-- Standard and fast EV charging modes
-- In-game persistent vehicle fuel/EV configuration by model
-- Floating refuel/charge progress above the vehicle without a boxed UI
-- No pickup or refuelling animation by default
-- 27 configured fuel stations with map blips
-- Four player-ownable stations and 23 public stations by default
-- Cash or bank payments
-- Dynamic prices, global tax and emergency-service discounts
-- Vehicle fuel persistence and leak damage
-- Fuel station ownership, stock, transactions and withdrawals
-- Tanker delivery jobs, automatic restocking and robberies
-- Emergency fuel cans
-- `ps-fuel` GetFuel/SetFuel compatibility exports
-- `cdn-fuel` and `LegacyFuel` compatibility providers
-- Startup configuration validation for duplicate stations and invalid charger links
-- Authorised mechanic/admin fuel-leak repair command
-- Server-authorised robbery sessions, vehicle persistence and delivery validation
-- Atomic station withdrawals and database audit logging
-- Included petrol and EV sound assets (no missing NUI audio files)
+## Core support
 
-## Framework Support
-
-PS Fuel 3.3.0 uses a framework bridge so the fuel, station, EV, delivery, robbery, persistence and pricing systems are not hard-wired to Qbox.
-
-Supported modes:
+Framework bridge modes:
 
 - Qbox
 - QBCore
 - ESX Legacy
-- Standalone
-- vMenu / Standalone mode
-- Custom framework adapters
+- Standalone / vMenu
+- Custom framework adapter
 
-Framework detection is automatic by default. You can force a mode in `config.lua`:
-
-```lua
-PSFuelConfig.Framework = {
-    Name = 'auto', -- auto, qbox, qbcore, esx, standalone, vmenu, custom
-    IdentifierType = 'license',
-}
-```
-
-`auto` checks for Qbox, QBCore and ESX, then falls back to the built-in standalone wallet.
-
-### Required resources
+Required resources:
 
 ```cfg
 ensure ox_lib
@@ -60,133 +23,387 @@ ensure ox_target
 ensure ps-fuel
 ```
 
-Qbox, QBCore or ESX are only required when that framework mode is being used. PS Fuel no longer declares `qbx_core` as a hard manifest dependency.
+OneSync is required. Do not run another resource that provides `ps-fuel`, `cdn-fuel` or `LegacyFuel` at the same time.
 
-OneSync is required and declared in the manifest.
+## 3.4.0 highlights
 
-Do not start the donor `cdn-fuel` or another `ps-fuel` at the same time.
+### Fuel grades and fuel quality
 
-## Universal Framework Bridge
+PS Fuel supports multiple liquid fuel grades rather than treating every pump as one generic petrol value.
 
-The bridge normalises the framework services PS Fuel needs:
+Default grades include:
 
-- Player lookup
-- Player identifier
-- Player name
-- Jobs and grades
-- On-duty state
-- Bank/cash balances
-- Money removal and payouts
-- Police/on-duty counting
-- Usable items
-- Standalone wallet support
+- Regular petrol — 87 octane
+- Midgrade — 89 octane
+- Premium — 91 octane
+- Premium 93 — 93 octane
+- E85
+- Diesel
+- Premium diesel
+- Electric charging
 
-External vehicle resources can continue to use the compatibility exports introduced in v3.2.2. The framework bridge is separate from the vehicle fuel synchronization layer.
+Vehicles can have a recommended octane. Running lower octane can increase consumption and reduce performance. E85 can require a flex-fuel vehicle. Wrong-family fuel can create a persistent contamination percentage.
 
-### Standalone / vMenu economy
+Contamination can be configured to cause:
 
-When no supported framework is running, PS Fuel creates `ps_fuel_wallets` and gives new identifiers the configured starting balances:
+- Reduced engine output
+- Rough running
+- Random stalling
+- Increased fuel consumption
+- Required dilution or mechanic intervention
 
-```lua
-PSFuelConfig.Framework.Standalone = {
-    StartingCash = 50000,
-    StartingBank = 100000,
-}
+Harsh wrong-fuel effects can be disabled in `PSFuelConfig.Advanced.FuelQuality`.
+
+### Real tank capacity
+
+Vehicle fuel is still exposed as 0–100 percent through compatibility exports, but internally PS Fuel converts that percentage to a real physical capacity.
+
+Tank capacity can be configured by:
+
+- Vehicle model
+- Vehicle class
+- Electric vehicle profile
+- Truck profile
+- Dual-tank profile
+
+This allows displays such as:
+
+```text
+137.4 / 300 L
 ```
 
-These balances are only used by the standalone adapter; Qbox/QBCore/ESX money is never duplicated into the PS Fuel wallet.
+or the configured regional unit equivalent.
 
-### Custom framework adapter
+### Economy, range and trip computer
 
-Advanced servers can register a custom adapter with the exported `SetFrameworkAdapter` function. The adapter can implement `GetPlayer`, `GetMoney`, `RemoveMoney`, `AddMoney`, `GetDutyCount`, and `RegisterUsableItem`.
+Consumption takes account of:
+
+- Vehicle class
+- RPM
+- Throttle
+- Road speed
+- Engine upgrades
+- Fuel-system wear
+- Fuel octane
+- Contamination
+- Weather
+- Engine idling
+
+The `/fueltrip` trip computer exposes:
+
+- Current fuel/energy
+- Estimated range
+- Current economy
+- Trip distance
+- Trip fuel used
+- Trip cost
+- Idle fuel used
+- EV battery health
+- Trip reset
+
+Supported economy formats include L/100 km, UK MPG and US MPG.
+
+### Truck fuel system
+
+Heavy vehicles can use:
+
+- Larger tank capacities
+- Main and secondary tanks
+- Diesel-only profiles
+- Higher realistic consumption
+- Higher idle consumption
+- High-flow commercial diesel pumps
+- Fleet/company payment
+- Persistent tanker cargo
+
+This is designed to work alongside LS Trucker and other trucking resources without changing the normal `GetFuel` / `SetFuel` API.
+
+### Fleet accounts and fuel cards
+
+Businesses and departments can use persistent fleet accounts and metadata-backed `ps_fuel_card` items.
+
+A fleet card can contain:
+
+- Company/account ID
+- Assigned driver
+- Daily spending limit
+- Allowed fuel types
+- Allowed stations
+- Transaction usage
+
+Create an account from server code:
 
 ```lua
-exports['ps-fuel']:SetFrameworkAdapter({
-    GetPlayer = function(source) ... end,
-    GetMoney = function(player, account) ... end,
-    RemoveMoney = function(player, account, amount, reason) ... end,
-    AddMoney = function(player, account, amount, reason) ... end,
-    GetDutyCount = function(jobType) ... end,
-    RegisterUsableItem = function(item, handler) ... end,
+exports['ps-fuel']:CreateFleetAccount('croft-logistics', 'Croft Logistics', 50000, 5000, 'trucker')
+```
+
+Administrative card issuing command:
+
+```text
+/fuelcardissue [server id] [account id] [daily limit] [optional PIN]
+```
+
+When `PSFuelConfig.Advanced.Fleet.AutoUseFuelCard` is enabled, a valid fleet card can automatically pay before the player's personal account is charged.
+
+### Loyalty system
+
+Fuel purchases can generate persistent loyalty points. Configurable tiers can provide percentage discounts such as Bronze, Silver, Gold and Platinum.
+
+### Wholesale market and suppliers
+
+Player-owned stations can operate against a changing wholesale fuel multiplier.
+
+FuelOS supports configurable supplier contracts with:
+
+- Wholesale multiplier
+- Delivery time
+- Reliability
+- Minimum order
+
+Owners/employees can select suppliers and order NPC restocks. Delivery costs are included in station analytics.
+
+### Station employees and upgrades
+
+FuelOS supports persistent station employees and configurable roles/permissions.
+
+Station upgrade categories include:
+
+- Storage
+- Pumps
+- Chargers
+- Security
+- Tanker/delivery capacity
+
+Upgrades can affect storage size, pump/charger speed, robbery protection and delivery quantities.
+
+### Station maintenance
+
+Fuel station equipment wears as fuel is sold. Poor condition can reduce effective station performance. Owners can pay for maintenance from the station balance.
+
+### Station analytics
+
+FuelOS exposes station analytics including:
+
+- Fuel volume sold
+- Revenue
+- Average transaction
+- Fuel type breakdown
+- EV charging revenue
+- Wholesale multiplier
+- Maintenance condition
+- Delivery costs
+- Robbery losses
+- Employees
+- Supplier
+- Upgrade levels
+
+### Price boards
+
+Configured stations can display live fuel prices in the world. Price boards update when station pricing or the wholesale market changes.
+
+### Fuel theft and siphoning
+
+`/siphonfuel [litres]` uses a `siphon_hose` and a short skill check.
+
+The server validates:
+
+- Player distance
+- Vehicle entity
+- Siphon hose ownership
+- Requested quantity
+- Available fuel
+- Maximum siphon quantity
+
+Successful siphoning creates a metadata-backed portable fuel container and can trigger a police dispatch event.
+
+### Portable fuel containers
+
+Default portable containers:
+
+- `fuel_can_5l`
+- `fuel_can_10l`
+- `fuel_can_20l`
+- `diesel_can_20l`
+
+The amount inside the can is stored in item metadata. A container can move fuel between itself and a vehicle while respecting both capacities.
+
+### Vehicle-to-vehicle fuel transfer
+
+`/fueltransfer [litres]` transfers fuel between two nearby vehicles. Distance, source quantity, target capacity and transfer amount are validated server-side.
+
+### Tanker cargo and mobile refuelling
+
+Supported tanker/service vehicles can hold persistent fuel cargo by plate.
+
+Exports:
+
+```lua
+local cargo = exports['ps-fuel']:GetTankerCargo(plate)
+exports['ps-fuel']:SetTankerCargo(plate, 'diesel', 12000, 30000)
+```
+
+`/mobilefuel [litres]` can refuel a stranded nearby vehicle from supported service-vehicle cargo.
+
+### Drive-offs and post-pay fuel
+
+Post-pay mode allows a station to record a pending transaction before settlement. Leaving without paying can:
+
+- Reverse station revenue
+- Record robbery/drive-off losses
+- Create a theft transaction
+- Trigger dispatch
+- Trigger an optional CCTV integration event
+
+Use `/fuelpostpay` to toggle post-pay behaviour when the feature is enabled.
+
+### Pump damage and fuel spills
+
+Driving away with an attached nozzle can:
+
+- Tear the hose from the pump
+- Create a synchronized fuel spill
+- Damage station equipment
+- Generate a station repair cost
+- Create a small configurable fire risk
+
+Spills are persistent for their configured lifetime and can affect players moving through them.
+
+### Fuel-system wear and mechanic repairs
+
+Per-plate fuel-system state tracks:
+
+- Fuel filter
+- Fuel pump
+- Injectors
+- Fuel tank
+- EV battery
+- Charging port
+
+Poor filter/injector condition increases consumption. A badly worn pump can cause intermittent stalls. Severe tank wear can create a persistent fuel leak.
+
+Default repair items:
+
+- `fuel_filter`
+- `fuel_pump`
+- `fuel_injectors`
+- `fuel_tank`
+- `ev_battery_module`
+- `charging_port`
+
+Mechanic repair item use is server-authorised and uses a skill/progress sequence before consuming the replacement part.
+
+JG Mechanic or another mechanic system can also integrate through:
+
+```lua
+local state = exports['ps-fuel']:GetVehicleEnergyState(plate)
+exports['ps-fuel']:RepairFuelSystemPart(plate, 'filter', 100)
+exports['ps-fuel']:RepairFuelSystemPart(plate, 'pump', 100)
+exports['ps-fuel']:RepairFuelSystemPart(plate, 'injectors', 100)
+exports['ps-fuel']:RepairFuelSystemPart(plate, 'tank', 100)
+exports['ps-fuel']:RepairFuelSystemPart(plate, 'battery', 20)
+exports['ps-fuel']:RepairFuelSystemPart(plate, 'charging_port', 100)
+```
+
+### Fuel leak repair item and minigame
+
+Normal leak repair no longer relies on `/repairfuelleak`.
+
+Use the inventory item:
+
+```text
+fuel_repair_kit
+```
+
+The repair flow validates the item, vehicle, distance and persisted leak state on the server. The client then completes an ox_lib skill check and progress interaction. The kit is consumed only after a successful server re-validation.
+
+Normal and severe leaks can use different minigame difficulty and repair duration.
+
+The old chat command is disabled by default in 3.4.0.
+
+### EV battery health and charging curve
+
+Electric vehicles maintain persistent battery health by plate. Battery degradation reduces usable range.
+
+Fast and standard charging can taper after 80% charge. Charger occupancy prevents two vehicles from owning the same charging connector at the same time.
+
+When enabled, a completed vehicle can accrue charger idle fees until the connector/session is released.
+
+Cold/snow weather reduces EV range.
+
+### Home chargers and private/business pumps
+
+External property/business resources can register private energy points:
+
+```lua
+exports['ps-fuel']:RegisterPrivateEnergyPoint({
+    ownerIdentifier = 'license:example',
+    pointType = 'home_charger',
+    label = 'Home Charger',
+    coords = vec3(100.0, 200.0, 30.0),
+    auth = {
+        jobs = { police = 0 },
+        plates = { 'ABC123' },
+        ace = 'ps-fuel.private'
+    }
 })
 ```
 
-## Database
+Private points can be restricted by job/grade, plate, owner and ACE permission.
 
-The resource automatically creates and upgrades its `ps_fuel_*` tables, including `ps_fuel_vehicle_profiles`. Existing data from the tablet-integrated version is reused. No manual SQL import is required. A manual SQL file remains available at `install/ps-fuel.sql`.
+### Roadside assistance hooks
 
-## Commands
+Players can use:
 
 ```text
-/fuel                  Show the current vehicle fuel level
-/fuelstation           Open the nearby public/owner station terminal
-/fueladmin             Open fuel administration (ACE restricted)
-/fuelvehicleconfig     Configure the nearest vehicle model as petrol, diesel or electric
-/setfuel 100           Set the nearest/current vehicle fuel
-/repairfuelleak        Repair the current/nearest vehicle fuel leak
-/closefuel             Force-close the FuelOS NUI
+/roadsidefuel
 ```
 
-Authorised administrators also receive **Configure vehicle fuel type** when third-eyeing a vehicle. The choice applies to every vehicle using that model and saves immediately without a restart.
+The command emits the configured roadside dispatch event. Phone, CAD and dispatch resources can listen for or trigger the same integration.
 
-Electric models can be configured with or without fast-charge support. Choosing **Automatic detection** removes the database override and returns the model to the rules in `config.lua`.
+### Physical fuel caps and nozzle rules
 
-## ACE permission
+The nozzle system prefers vehicle fuel-cap/tank bones when available and supports per-model offsets for unusual/modded vehicles.
 
-```cfg
-add_ace group.admin ps-fuel.admin allow
-add_ace group.owner ps-fuel.admin allow
+Nozzle/fuel-family rules distinguish:
 
-# Allow mechanics to use /repairfuelleak through ACE if desired.
-add_ace group.mechanic ps-fuel.repair allow
-```
+- Petrol
+- Diesel
+- EV connector
+- High-flow commercial diesel
 
-`/repairfuelleak` also accepts framework jobs and minimum grades configured in
-`PSFuelConfig.Leaks.RepairJobs`.
+### Regional units
 
-The same permission controls `/fueladmin`, `/fuelvehicleconfig`, and the vehicle configuration third-eye option unless `PSFuelConfig.VehicleConfiguration.AdminAce` is changed.
+Configuration supports:
 
-## Charging modes
+- Litres
+- Gallons
+- Currency per litre/gallon
+- L/100 km
+- UK MPG
+- US MPG
 
-Standard charging uses:
+The compatibility API remains percentage-based regardless of display units.
 
-```lua
-PSFuelConfig.Electric.ChargeSpeed
-PSFuelConfig.Electric.PricePerFuel
-```
+### Weather and idle consumption
 
-Fast charging uses:
+Snow/cold weather affects EV range and increases ICE consumption slightly. Rain also applies a smaller consumption penalty. Vehicles consume fuel while idling with the engine running, with a higher configurable idle rate for trucks.
 
-```lua
-PSFuelConfig.Electric.FastCharge.ChargeSpeed
-PSFuelConfig.Electric.FastCharge.PriceMultiplier
-```
+### Vehicle fuel history
 
-Fast charge only appears when:
+Every completed purchase can be stored against the vehicle plate with:
 
-1. The vehicle model is configured as electric and supports fast charging.
-2. `PSFuelConfig.Electric.FastCharge.Enabled` is enabled.
-3. The selected charger supports fast charging.
+- Station
+- Fuel type
+- Volume
+- Amount paid
+- Odometer
+- Time
 
-Every charger supports it by default. Set `fastCharge = false` on an individual charger entry to disable it there.
-
-## Refuelling display and controls
-
-After the nozzle is inserted and a fuel/charge mode is selected, live percentage, selected type and amount paid render as plain world text above the vehicle. No boxed process UI or stop-control hint is shown.
-
-The configured cancel key remains available as an emergency control but is intentionally not displayed:
-
-```lua
-PSFuelConfig.CancelRefuelKey = 73 -- X
-```
-
-No animations play while taking or using the nozzle because:
-
-```lua
-PSFuelConfig.Nozzles.Animation.Enabled = false
-```
+Use `/fuelhistory` while near/in a vehicle to view recent records.
 
 ## Compatibility exports
+
+Existing integrations remain supported:
 
 ```lua
 local fuel = exports['ps-fuel']:GetFuel(vehicle)
@@ -194,33 +411,169 @@ exports['ps-fuel']:SetFuel(vehicle, 100.0)
 exports['ps-fuel']:AddFuel(vehicle, 10.0)
 exports['ps-fuel']:RemoveFuel(vehicle, 5.0)
 
--- Lowercase aliases are also available for custom resources.
 local sameFuel = exports['ps-fuel']:getFuel(vehicle)
 exports['ps-fuel']:setFuel(vehicle, 75.0)
-
-local holdingEVNozzle = exports['cdn-fuel']:IsHoldingElectricNozzle()
-exports['cdn-fuel']:SetElectricNozzle('pickup')
-exports['cdn-fuel']:SetElectricNozzle('putback')
 ```
 
-## Configuration
+New vehicle-energy exports:
 
-Edit `config.lua` to change station positions, ownership, prices, tax, fuel types, static diesel/electric models, charge speeds, fast-charge pricing, EV chargers, nozzles, world-display height, hose behaviour, emergency discounts, deliveries, robberies and blips.
+```lua
+local fuelType = exports['ps-fuel']:GetFuelType(vehicle)
+local capacity = exports['ps-fuel']:GetFuelCapacity(vehicle)
+local rangeKm = exports['ps-fuel']:GetFuelRange(vehicle)
+local economy, unit = exports['ps-fuel']:GetFuelEconomy(vehicle)
+local battery = exports['ps-fuel']:GetEVBatteryHealth(vehicle)
+local leaking = exports['ps-fuel']:IsFuelLeaking(vehicle)
+local tanks = exports['ps-fuel']:GetFuelTankSplit(vehicle)
+local fuelCap = exports['ps-fuel']:GetFuelCapPosition(vehicle)
+```
 
-The imported donor assets and behaviours retain their GPL notices in `licenses/`.
+The existing native fuel level, `_FUEL_LEVEL`, generic `fuel` statebag and `recoilFuel` statebag synchronization remains available for TGIANN, JG and custom resources.
 
+## Developer events
 
-## Public-release notes
+3.4.0 exposes gameplay events for integrations:
 
-- Keep the resource folder named `ps-fuel`.
-- Do not run another resource providing `ps-fuel`, `cdn-fuel` or `LegacyFuel`.
-- The entire combined resource is distributed under GPL-3.0 because it incorporates GPL-licensed donor code and assets. If you sell it, buyers must receive the complete corresponding source and GPL rights, including the right to redistribute original or modified copies.
-- Run the checklist in `TESTING.md` on a staging server before deploying updates.
+```text
+ps-fuel:fuelStarted
+ps-fuel:fuelStopped
+ps-fuel:fuelChanged
+ps-fuel:vehicleEmpty
+ps-fuel:vehicleRefuelled
+ps-fuel:stationStockChanged
+ps-fuel:paymentCompleted
+ps-fuel:fuelPurchased
+ps-fuel:fuelLeakStarted
+ps-fuel:fuelLeakRepaired
+ps-fuel:fuelTheft
+ps-fuel:roadsideRequested
+```
 
-## TGIANN, JG and custom-script compatibility
+## Security
 
-Version 3.2.1 keeps the GTA native fuel level, `_FUEL_LEVEL` decorator, `recoilFuel` statebag and the generic `fuel` statebag synchronized. External changes made through any of those common paths are reconciled back into ps-fuel's cache and persistence layer.
+The server validates sensitive fuel operations rather than accepting client totals blindly.
 
-JG resources can use `Config.FuelSystem = "ps-fuel"` and call the standard `GetFuel` / `SetFuel` exports. TGIANN/custom resources that write `SetVehicleFuelLevel` and `_FUEL_LEVEL` are also detected. For new custom resources, prefer the ps-fuel exports because they update persistence and engine-empty state immediately.
+Validation includes:
 
-When a tank reaches the configured shut-off threshold, ps-fuel marks the vehicle empty and makes it undriveable. As soon as fuel is restored, that lock is explicitly cleared so the engine can be started normally again.
+- Refuelling distance
+- Vehicle/session entity
+- Fuel type
+- Maximum physical amount per tick
+- Station stock
+- Payment
+- Fleet account/card limits
+- Portable container capacity
+- Siphoning inventory and quantity
+- Vehicle-to-vehicle transfer distance/capacity
+- Leak repair session/item/distance/state
+- Mechanic replacement part sessions
+- Private energy point authorization
+
+Suspicious operations can be written to the normal audit system and optionally Discord.
+
+## Discord logging
+
+Enable `PSFuelConfig.Advanced.Discord` and configure the webhook to log configured events such as:
+
+- Fuel purchases
+- Station withdrawals
+- Robberies
+- Administrative changes
+- Suspicious fuel activity
+
+## Inventory items
+
+Ready-to-copy item definitions are included in:
+
+```text
+install/items/tgiann-inventory.lua
+install/items/qbox-items.lua
+```
+
+Add the definitions to the inventory resource you actually use. Existing common images such as `repairkit.png`, `jerry_can.png` and `bank_card.png` are referenced where possible.
+
+## Database
+
+All `ps_fuel_*` tables are automatically created/upgraded at startup. No manual import is required for a normal install.
+
+A current manual schema is still included at:
+
+```text
+install/ps-fuel.sql
+```
+
+3.4.0 adds persistent tables for vehicle energy/wear/history, fleet accounts/cards, loyalty, station employees/advanced state, tanker cargo, private points and spills.
+
+## Useful commands
+
+```text
+/fuel
+/fuelstation
+/fueladmin
+/fuelvehicleconfig
+/setfuel 100
+/fueltrip
+/fueltripreset
+/fuelhistory
+/fuelpostpay
+/fuelloyaltycard
+/fuelcardpin [PIN]
+/siphonfuel [litres]
+/fueltransfer [litres]
+/mobilefuel [litres]
+/roadsidefuel
+/closefuel
+/psfuelversion                 server console
+```
+
+Administrative fleet commands:
+
+```text
+/fuelfleetcreate ...
+/fuelcardissue [server id] [account id] [daily limit] [optional PIN]
+```
+
+## Version checker
+
+The installed version is read from `fxmanifest.lua`:
+
+```lua
+version '3.4.0'
+```
+
+`version.lua` checks the latest GitHub release from:
+
+```text
+deluxehub-evolvenetwork/ps-fuel
+```
+
+It runs shortly after resource startup and then every six hours. From the server console:
+
+```text
+psfuelversion
+```
+
+An unavailable GitHub API never prevents the resource from starting.
+
+## JG, TGIANN and custom resources
+
+JG HUD, JG Advanced Garages and other resources that support `ps-fuel` should continue to use their normal `ps-fuel` integration. They still receive the expected percentage fuel value.
+
+TGIANN/custom resources that write GTA fuel natives, `_FUEL_LEVEL`, `fuel` or `recoilFuel` continue to synchronize with PS Fuel.
+
+For new code, prefer PS Fuel exports because they update the cache, statebags and empty-engine state together.
+
+## Upgrade from 3.3.0
+
+1. Back up the existing resource and database.
+2. Replace the resource with 3.4.0.
+3. Merge your custom station/model configuration into the new `config.lua`.
+4. Add the new inventory items from `install/items`.
+5. Confirm `ox_lib`, `oxmysql` and `ox_target` start before PS Fuel.
+6. Start your framework/inventory before PS Fuel when its usable-item API is required.
+7. Perform a full server restart.
+8. Run the tests in `TESTING.md` before production use.
+
+## License
+
+The project retains the licence notices included in the resource. Imported GPL-covered donor code/assets continue to be distributed under their applicable GPL terms.

@@ -408,10 +408,12 @@ PSFuelConfig.StationTablet = {
 PSFuelConfig.FuelTypes = {
     Default = 'petrol',
     petrol = {
-        label = 'Petrol',
-        description = 'Regular unleaded for standard road vehicles.',
+        label = 'Regular 87',
+        description = '87 octane regular unleaded for standard road vehicles.',
         priceMultiplier = 1.00,
         transactionType = 'fuel_petrol',
+        family = 'petrol',
+        octane = 87,
         accent = '#18d8e8',
     },
     premium = {
@@ -419,13 +421,56 @@ PSFuelConfig.FuelTypes = {
         description = 'High-octane unleaded for performance vehicles.',
         priceMultiplier = 1.35,
         transactionType = 'fuel_premium',
+        family = 'petrol',
+        octane = 91,
         accent = '#a78bfa',
+    },
+
+    midgrade = {
+        label = 'Midgrade 89',
+        description = '89 octane petrol for vehicles that benefit from higher knock resistance.',
+        priceMultiplier = 1.12,
+        transactionType = 'fuel_midgrade',
+        family = 'petrol',
+        octane = 89,
+        accent = '#22c55e',
+    },
+    premium93 = {
+        label = 'Premium 93',
+        description = '93 octane premium petrol for high-performance engines.',
+        priceMultiplier = 1.48,
+        transactionType = 'fuel_premium93',
+        family = 'petrol',
+        octane = 93,
+        accent = '#8b5cf6',
+    },
+    e85 = {
+        label = 'E85',
+        description = 'High-ethanol fuel for configured flex-fuel vehicles.',
+        priceMultiplier = 0.96,
+        transactionType = 'fuel_e85',
+        family = 'petrol',
+        octane = 100,
+        ethanol = 85,
+        requiresFlexFuel = true,
+        accent = '#84cc16',
+    },
+    diesel_premium = {
+        label = 'Premium Diesel',
+        description = 'Higher-cetane diesel for commercial and performance diesel engines.',
+        priceMultiplier = 1.24,
+        transactionType = 'fuel_diesel_premium',
+        family = 'diesel',
+        cetane = 52,
+        accent = '#f97316',
     },
     diesel = {
         label = 'Diesel',
         description = 'Commercial diesel for configured heavy vehicles.',
         priceMultiplier = 1.12,
         transactionType = 'fuel_diesel',
+        family = 'diesel',
+        cetane = 45,
         accent = '#f59e0b',
 
         -- GTA does not expose a universal fuel type. These classes and models
@@ -446,6 +491,243 @@ PSFuelConfig.FuelTypes = {
     },
 }
 
+
+
+PSFuelConfig.Advanced = {
+    Enabled = true,
+    Units = {
+        Volume = 'litres', -- litres or gallons
+        Economy = 'l100km', -- l100km, mpg_us, mpg_uk
+        CurrencySymbol = '£',
+    },
+    Tanks = {
+        Enabled = true,
+        DefaultLitres = 60.0,
+        DefaultEVKWh = 75.0,
+        ClassCapacityLitres = {
+            [0]=45,[1]=55,[2]=70,[3]=60,[4]=75,[5]=65,[6]=65,[7]=75,[8]=18,[9]=85,
+            [10]=180,[11]=120,[12]=90,[14]=250,[15]=300,[16]=450,[17]=100,[18]=90,[19]=220,[20]=300,
+        },
+        ModelCapacity = {
+            [`phantom`] = 300, [`phantom3`] = 300, [`hauler`] = 320, [`hauler2`] = 320,
+            [`packer`] = 340, [`benson`] = 140, [`mule`] = 120, [`mule2`] = 120,
+            [`mule3`] = 130, [`mule4`] = 140, [`pounder`] = 180, [`pounder2`] = 200,
+        },
+        DualTankModels = {
+            [`phantom`] = { main = 170, secondary = 130 },
+            [`phantom3`] = { main = 170, secondary = 130 },
+            [`hauler`] = { main = 180, secondary = 140 },
+            [`hauler2`] = { main = 180, secondary = 140 },
+            [`packer`] = { main = 180, secondary = 160 },
+        },
+    },
+    FuelQuality = {
+        Enabled = true,
+        ContaminationEnabled = true,
+        SevereWrongFuelEffects = true,
+        DefaultRecommendedOctane = 87,
+        PerformanceClasses = { [6]=91, [7]=93 },
+        FlexFuelModels = {},
+        LowOctaneEfficiencyPenaltyPerPoint = 0.01,
+        WrongFuelStallChance = 12,
+        WrongFuelWearPerMinute = 1.25,
+        DilutionRecovery = true,
+    },
+    Economy = {
+        Enabled = true,
+        BaseL100Km = 10.5,
+        IdleLitresPerHour = 1.1,
+        TruckIdleLitresPerHour = 2.4,
+        RPMWeight = 0.55,
+        ThrottleWeight = 0.35,
+        SpeedWeight = 0.10,
+        UpgradeEfficiencyPerEngineLevel = 0.015,
+        ReservePercent = 10.0,
+        ReserveWarningCooldownSeconds = 90,
+    },
+    Fleet = {
+        Enabled = true,
+        FuelCardItem = 'ps_fuel_card',
+        AutoUseFuelCard = true,
+        AllowDepartmentAccounts = true,
+        DefaultDailyLimit = 2500,
+        Jobs = { police = true, sheriff = true, ambulance = true, fire = true, mechanic = true, trucker = true },
+    },
+    Loyalty = {
+        Enabled = true,
+        CardItem = 'ps_fuel_loyalty_card',
+        RequireCard = false,
+        CardCost = 25,
+        PointsPerCurrency = 1,
+        Tiers = {
+            { name='Bronze', points=0, discount=0 },
+            { name='Silver', points=2500, discount=2 },
+            { name='Gold', points=10000, discount=5 },
+            { name='Platinum', points=25000, discount=8 },
+        },
+    },
+    Market = {
+        Enabled = true,
+        WholesaleUpdateMinutes = 45,
+        BaseWholesalePrice = 1.10,
+        MinMultiplier = 0.72,
+        MaxMultiplier = 1.45,
+        Step = 0.06,
+    },
+    Suppliers = {
+        Enabled = true,
+        Contracts = {
+            localfuel = { label='Local Fuel Distribution', priceMultiplier=1.00, deliveryMinutes=12, reliability=0.96, minimumOrder=750 },
+            budget = { label='Budget Petro Logistics', priceMultiplier=0.91, deliveryMinutes=22, reliability=0.82, minimumOrder=1500 },
+            premium = { label='Premium Energy Logistics', priceMultiplier=1.12, deliveryMinutes=8, reliability=0.995, minimumOrder=500 },
+        },
+    },
+    Tankers = {
+        Enabled = true,
+        Capacities = { tanker=30000, tanker2=36000, armytanker=28000 },
+        DefaultCapacity = 30000,
+    },
+    Siphoning = {
+        Enabled = true,
+        Item = 'siphon_hose',
+        MaximumLitres = 20,
+        PoliceChance = 20,
+    },
+    DriveOffs = {
+        Enabled = true,
+        AllowPostPayStations = true,
+        DispatchEvent = 'ps-fuel:server:fuelTheftDispatch',
+        CCTVEvent = '',
+    },
+    PumpDamage = {
+        Enabled = true,
+        SpillSeconds = 90,
+        RepairCost = 450,
+        FireChancePercent = 4,
+    },
+    PortableFuel = {
+        Enabled = true,
+        Containers = {
+            fuel_can_5l = { label='5L Petrol Can', capacity=5, family='petrol' },
+            fuel_can_10l = { label='10L Petrol Can', capacity=10, family='petrol' },
+            fuel_can_20l = { label='20L Petrol Can', capacity=20, family='petrol' },
+            diesel_can_20l = { label='20L Diesel Can', capacity=20, family='diesel' },
+        },
+    },
+    FuelSystemParts = {
+        Enabled = true,
+        Items = {
+            fuel_filter = { part='filter', label='Fuel Filter', repair=100 },
+            fuel_pump = { part='pump', label='Fuel Pump', repair=100 },
+            fuel_injectors = { part='injectors', label='Fuel Injector Set', repair=100 },
+            fuel_tank = { part='tank', label='Fuel Tank', repair=100 },
+            ev_battery_module = { part='battery', label='EV Battery Module', repair=20 },
+            charging_port = { part='charging_port', label='Charging Port', repair=100 },
+        },
+        RequireMechanicJob = true,
+        Jobs = { mechanic=0 },
+        Skill = { 'easy','medium','medium' },
+    },
+    Wear = {
+        Enabled = true,
+        FilterWearPer100Km = 0.40,
+        PumpWearPer100Km = 0.25,
+        InjectorWearPer100Km = 0.30,
+        EVBatteryDegradationPer1000Km = 0.10,
+        MinimumEfficiency = 0.65,
+        JGMechanicResource = 'jg-mechanic',
+    },
+    EV = {
+        BatteryHealthEnabled = true,
+        ChargingCurveEnabled = true,
+        SlowdownStartPercent = 80,
+        MinimumChargeRateMultiplier = 0.25,
+        ChargerOccupancy = true,
+        IdleFeeEnabled = true,
+        IdleFeeGraceMinutes = 5,
+        IdleFeePerMinute = 5,
+        ColdWeatherRangePenalty = 0.15,
+    },
+    PrivateEnergy = {
+        Enabled = true,
+        HomeChargers = true,
+        BusinessPumps = true,
+        HomeChargerItem = 'home_charger_kit',
+        BusinessPumpItem = 'business_pump_kit',
+        InstallDistance = 3.0,
+    },
+    Authorisation = {
+        Enabled = true,
+        EnforcePrivatePoints = true,
+    },
+    MobileRefuel = {
+        Enabled = true,
+        ServiceVehicles = { [`mule`] = true, [`benson`] = true, [`pounder`] = true },
+        MaxDistance = 7.0,
+    },
+    Roadside = {
+        Enabled = true,
+        DispatchEvent = 'ps-fuel:server:roadsideRequest',
+        PhoneEvent = '',
+    },
+    PriceBoards = {
+        Enabled = true,
+        DrawDistance = 35.0,
+        Height = 2.0,
+    },
+    StationEmployees = { Enabled = true },
+    StationUpgrades = {
+        Enabled = true,
+        Levels = {
+            storage = { 0, 25000, 60000, 120000 },
+            pumps = { 0, 18000, 45000, 90000 },
+            chargers = { 0, 22000, 55000, 110000 },
+            security = { 0, 30000, 75000, 150000 },
+            tanker = { 0, 20000, 50000, 100000 },
+        },
+    },
+    StationMaintenance = {
+        Enabled = true,
+        WearPer1000Litres = 0.35,
+        MinimumCondition = 40,
+    },
+    PhysicalFuelCaps = {
+        Enabled = true,
+        DefaultBone = 'wheel_lr',
+        ModelOffsets = {},
+    },
+    Nozzles = {
+        HighFlowDieselEnabled = true,
+        TruckHighFlowMultiplier = 3.0,
+    },
+    Analytics = { Enabled = true },
+    Discord = {
+        Enabled = false,
+        Webhook = '',
+        Events = { purchases=true, withdrawals=true, robberies=true, admin=true, suspicious=true },
+    },
+    AntiCheat = {
+        Enabled = true,
+        MaxPercentPerTick = 10.0,
+        MaxLitresPerTick = 20.0,
+        MaxVehicleDistance = 8.0,
+        SuspiciousStrikeLimit = 5,
+    },
+}
+
+PSFuelConfig.LeakRepair = {
+    Enabled = true,
+    Item = 'fuel_repair_kit',
+    ConsumeOnSuccess = true,
+    RequireJobOrAce = false,
+    UseSkillCheck = true,
+    NormalSkill = { 'easy', 'easy', 'medium' },
+    SevereSkill = { 'medium', 'hard', 'hard' },
+    Duration = 6500,
+    SevereDuration = 10000,
+    Distance = 4.0,
+    KeepAdminCommand = false,
+}
 
 PSFuelConfig.Compatibility = {
     -- LegacyFuel/TGIANN-style scripts often read/write this decorator.

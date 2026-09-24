@@ -1,108 +1,46 @@
 local resourceName = GetCurrentResourceName()
-local currentVersion = GetResourceMetadata(resourceName, 'version', 0) or '0.0.0'
-local function normalizeRepository(value)
-    value = tostring(value or ''):match('^%s*(.-)%s*$') or ''
-    value = value:gsub('^https?://github%.com/', '')
-    value = value:gsub('%.git$', '')
-    value = value:gsub('/$', '')
-    return value
+local repository = GetConvar('ps_fuel_github_repo', 'deluxehub-evolvenetwork/ps-fuel')
+local installed = GetResourceMetadata(resourceName, 'version', 0) or '0.0.0'
+
+local function parts(value)
+    value = tostring(value or ''):gsub('^v','')
+    local a,b,c = value:match('^(%d+)%.(%d+)%.(%d+)')
+    return tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0
 end
 
-local defaultRepository = 'deluxehub-evolvenetwork/ps-fuel'
-local repository = normalizeRepository(GetConvar('ps_fuel_github_repo', defaultRepository))
-local checkInterval = math.max(1, tonumber(GetConvar('ps_fuel_version_check_hours', '6')) or 6)
-
-local function cleanVersion(value)
-    value = tostring(value or '')
-    local major, minor, patch = value:match('(%d+)%.(%d+)%.(%d+)')
-    if major then
-        return ('%s.%s.%s'):format(major, minor, patch)
-    end
-    return '0.0.0'
-end
-
-local function versionParts(value)
-    local parts = {}
-    for part in cleanVersion(value):gmatch('%d+') do
-        parts[#parts + 1] = tonumber(part) or 0
-    end
-    return parts
-end
-
-local function isNewerVersion(remoteVersion, localVersion)
-    local remote = versionParts(remoteVersion)
-    local installed = versionParts(localVersion)
-    local count = math.max(#remote, #installed)
-
-    for index = 1, count do
-        local remotePart = remote[index] or 0
-        local installedPart = installed[index] or 0
-        if remotePart ~= installedPart then
-            return remotePart > installedPart
-        end
-    end
-
-    return false
+local function newer(remote, localVersion)
+    local ra,rb,rc=parts(remote); local la,lb,lc=parts(localVersion)
+    if ra~=la then return ra>la end
+    if rb~=lb then return rb>lb end
+    return rc>lc
 end
 
 local function checkVersion(manual)
-    if repository == '' then
-        if manual then
-            print(('[ps-fuel] Version %s installed. No GitHub repository is configured for update checks.'):format(currentVersion))
-        end
-        return
-    end
-
-    local url = ('https://api.github.com/repos/%s/releases/latest'):format(repository)
-    PerformHttpRequest(url, function(statusCode, body)
-        if statusCode ~= 200 or not body or body == '' then
-            if manual then
-                print(('[ps-fuel] Version check failed with HTTP %s.'):format(statusCode or 0))
-            end
+    PerformHttpRequest(('https://api.github.com/repos/%s/releases/latest'):format(repository), function(status, body)
+        if status ~= 200 or not body then
+            if manual then print(('[ps-fuel] Version check unavailable (HTTP %s).'):format(status)) end
             return
         end
-
-        local ok, release = pcall(json.decode, body)
-        if not ok or type(release) ~= 'table' then
-            if manual then
-                print('[ps-fuel] Version check failed because GitHub returned invalid data.')
-            end
-            return
-        end
-
-        local latestVersion = cleanVersion(release.tag_name or release.name)
-        if latestVersion == '' or latestVersion == '0.0.0' then
-            if manual then
-                print('[ps-fuel] Version check completed but no valid release version was returned.')
-            end
-            return
-        end
-
-        if isNewerVersion(latestVersion, currentVersion) then
-            print(('[ps-fuel] Update available: v%s -> v%s'):format(cleanVersion(currentVersion), latestVersion))
-            if release.html_url then
-                print(('[ps-fuel] %s'):format(release.html_url))
-            end
+        local ok,data=pcall(json.decode,body)
+        if not ok or type(data)~='table' then return end
+        local latest=tostring(data.tag_name or data.name or ''):gsub('^v','')
+        if latest=='' then return end
+        if newer(latest,installed) then
+            print(('^3[ps-fuel]^7 Update available: ^2%s^7 -> ^2%s^7'):format(installed,latest))
+            print(('^3[ps-fuel]^7 https://github.com/%s/releases/latest'):format(repository))
         elseif manual then
-            print(('[ps-fuel] v%s is up to date.'):format(cleanVersion(currentVersion)))
+            print(('^2[ps-fuel]^7 v%s is current.'):format(installed))
         end
-    end, 'GET', '', {
-        ['Accept'] = 'application/vnd.github+json',
-        ['User-Agent'] = 'ps-fuel-version-checker'
-    })
+    end,'GET','',{['User-Agent']='ps-fuel-version-checker'})
 end
 
-RegisterCommand('psfuelversion', function(source)
-    if source ~= 0 then return end
-    checkVersion(true)
-end, true)
-
 CreateThread(function()
-    Wait(2500)
+    Wait(5000)
     checkVersion(false)
-
-    while repository ~= '' do
-        Wait(checkInterval * 60 * 60 * 1000)
-        checkVersion(false)
-    end
+    while true do Wait(21600000) checkVersion(false) end
 end)
+
+RegisterCommand('psfuelversion',function(source)
+    if source~=0 then return end
+    checkVersion(true)
+end,true)
