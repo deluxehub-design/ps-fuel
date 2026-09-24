@@ -58,7 +58,7 @@ local function discord(title, description, fields)
     local dc = cfg('Discord', {})
     if dc.Enabled ~= true or not dc.Webhook or dc.Webhook == '' then return end
     local payload = {
-        username = 'PS Fuel 3.5.0',
+        username = 'PS Fuel 3.5.1',
         embeds = {{
             title = title,
             description = description,
@@ -214,7 +214,7 @@ local function ensureSchema()
     MySQL.query.await([[INSERT IGNORE INTO ps_fuel_settings (setting_key, setting_value) VALUES ('wholesale_multiplier','1.0')]])
     wholesaleMultiplier = tonumber(MySQL.scalar.await("SELECT setting_value FROM ps_fuel_settings WHERE setting_key='wholesale_multiplier'")) or 1.0
     ready = true
-    print('[ps-fuel] Advanced 3.5.0 database ready.')
+    print('[ps-fuel] Advanced 3.5.1 database ready.')
 end
 
 CreateThread(function()

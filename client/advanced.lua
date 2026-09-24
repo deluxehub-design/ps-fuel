@@ -246,18 +246,31 @@ RegisterCommand('fueltrip',function()
     local current,capacity=volume(vehicle)
     local ev=A.GetEVBatteryHealth(vehicle)
     local eco,ecoUnit=A.GetFuelEconomy(vehicle)
-    lib.registerContext({id='ps_fuel_trip',title=('Trip computer · %s'):format(p),options={
-        {title='Fuel / energy',description=('%.1f / %.1f %s · %.1f%%'):format(S.FormatVolume(current),S.FormatVolume(capacity),select(2,S.FormatVolume(current)),fuel(vehicle)),icon='gas-pump'},
-        {title='Estimated range',description=('~%.0f km'):format(A.GetFuelRange(vehicle)),icon='road'},
-        {title='Current economy',description=('%.1f %s'):format(eco,ecoUnit),icon='gauge-high'},
-        {title='Trip distance',description=('%0.1f km'):format(tonumber(state.distanceKm) or 0),icon='route'},
-        {title='Trip fuel used',description=(function() local v,u=S.FormatVolume(tonumber(state.fuelUsed) or 0); return ('%0.2f %s'):format(v,u) end)(),icon='droplet'},
-        {title='Trip cost',description=('%s%d'):format((((PSFuelConfig.Advanced or {}).Units or {}).CurrencySymbol or '£'),tonumber(state.cost) or 0),icon='coins'},
-        {title='Idle fuel',description=(function() local v,u=S.FormatVolume(tonumber(state.idleFuel) or 0); return ('%0.2f %s'):format(v,u) end)(),icon='clock'},
-        {title='EV battery health',description=('%0.1f%%'):format(ev),icon='battery-half',disabled=not vehicleProfile(vehicle).electric},
-        {title='Reset trip',description='Reset distance, fuel and cost counters.',icon='rotate-left',onSelect=function() TriggerServerEvent('ps-fuel:server:telemetry',p,{distanceKm=sample.distance,idleFuel=sample.idle,fuelUsed=sample.used,elapsedMinutes=0.5}); Wait(200); local r=lib.callback.await('ps-fuel:server:resetTrip',false,p); if r and r.success then notify('Trip computer reset.','success') end end},
-    }})
-    lib.showContext('ps_fuel_trip')
+    local tripResult=PSFuelTablet.Open({
+        title=('Trip computer · %s'):format(p),
+        description='Live vehicle energy and trip telemetry.',
+        badge='Vehicle',
+        rows={
+            {label='Fuel / energy',value=('%.1f / %.1f %s · %.1f%%'):format(S.FormatVolume(current),S.FormatVolume(capacity),select(2,S.FormatVolume(current)),fuel(vehicle))},
+            {label='Estimated range',value=('~%.0f km'):format(A.GetFuelRange(vehicle))},
+            {label='Current economy',value=('%.1f %s'):format(eco,ecoUnit)},
+            {label='Trip distance',value=('%0.1f km'):format(tonumber(state.distanceKm) or 0)},
+            {label='Trip fuel used',value=(function() local v,u=S.FormatVolume(tonumber(state.fuelUsed) or 0); return ('%0.2f %s'):format(v,u) end)()},
+            {label='Trip cost',value=('%s%d'):format((((PSFuelConfig.Advanced or {}).Units or {}).CurrencySymbol or '£'),tonumber(state.cost) or 0)},
+            {label='Idle fuel',value=(function() local v,u=S.FormatVolume(tonumber(state.idleFuel) or 0); return ('%0.2f %s'):format(v,u) end)()},
+            {label='EV battery health',value=vehicleProfile(vehicle).electric and ('%0.1f%%'):format(ev) or 'N/A'},
+        },
+        actions={
+            {id='close',label='Close',style='secondary'},
+            {id='reset',label='Reset trip',style='danger'},
+        }
+    })
+    if tripResult and tripResult.action=='reset' then
+        TriggerServerEvent('ps-fuel:server:telemetry',p,{distanceKm=sample.distance,idleFuel=sample.idle,fuelUsed=sample.used,elapsedMinutes=0.5})
+        Wait(200)
+        local r=lib.callback.await('ps-fuel:server:resetTrip',false,p)
+        if r and r.success then notify('Trip computer reset.','success') end
+    end
 end,false)
 
 RegisterNetEvent('ps-fuel:client:resetTrip',function() ExecuteCommand('fueltrip') end)
@@ -404,13 +417,18 @@ RegisterNetEvent('ps-fuel:client:usePortableContainer',function(itemName,def,met
     local held=tonumber(metadata and metadata.fuel) or 0
     local capacity=tonumber(metadata and metadata.capacity) or tonumber(def and def.capacity) or 20
     local heldDisplay, heldUnit=S.FormatVolume(held); local capDisplay=S.FormatVolume(capacity)
-    local choice=lib.alertDialog({header=def.label or itemName,content=('Container: %.1f / %.1f %s'):format(heldDisplay,capDisplay,heldUnit),centered=true,cancel=true,labels={confirm=held>0 and 'Pour into vehicle' or 'Fill from vehicle',cancel='Cancel'}})
-    if choice~='confirm' then return end
     local direction=held>0 and 'to_vehicle' or 'from_vehicle'
     local maxDisplay=S.FormatVolume(capacity)
-    local input=lib.inputDialog('Fuel transfer',{{type='number',label=heldUnit,default=math.min(5,maxDisplay),min=0.1,max=maxDisplay,step=0.5,required=true}})
-    if not input then return end
-    local response=lib.callback.await('ps-fuel:server:portableTransfer',false,itemName,slot,NetworkGetNetworkIdFromEntity(vehicle),direction,S.ToBaseVolume(tonumber(input[1])),syncedVehicleClass(vehicle))
+    local input=PSFuelTablet.Open({
+        title=def.label or itemName,
+        description=held>0 and 'Transfer fuel from the container into the vehicle.' or 'Fill this container from the nearby vehicle.',
+        badge='Portable fuel',
+        rows={{label='Container level',value=('%.1f / %.1f %s'):format(heldDisplay,capDisplay,heldUnit)}},
+        fields={{key='amount',type='number',label=heldUnit,default=math.min(5,maxDisplay),min=0.1,max=maxDisplay,step=0.5,required=true,full=true}},
+        actions={{id='cancel',label='Cancel',style='secondary'},{id='transfer',label=held>0 and 'Pour into vehicle' or 'Fill container',style='primary'}}
+    })
+    if not input or input.action~='transfer' then return end
+    local response=lib.callback.await('ps-fuel:server:portableTransfer',false,itemName,slot,NetworkGetNetworkIdFromEntity(vehicle),direction,S.ToBaseVolume(tonumber(input.values.amount)),syncedVehicleClass(vehicle))
     if response and response.success then
         PSFuelRuntime.SetFuel(vehicle,response.fuel)
         notify(response.message,'success')
@@ -492,11 +510,16 @@ RegisterNetEvent('ps-fuel:client:installFuelPart',function(session)
 end)
 
 RegisterNetEvent('ps-fuel:client:placePrivateEnergyPoint',function(itemName,def)
-    local input=lib.inputDialog(def.label or 'Install energy point',{{type='input',label='Display name',default=def.label or 'Private Energy Point',required=true,min=2,max=60}})
-    if not input then return end
-    local confirmed=lib.alertDialog({header='Install here?',content='The charger/pump interaction point will be installed at your current position.',centered=true,cancel=true})
-    if confirmed~='confirm' then return end
-    local response=lib.callback.await('ps-fuel:server:installPrivateEnergyPoint',false,itemName,def,input[1])
+    local input=PSFuelTablet.Open({
+        title=def.label or 'Install energy point',
+        description='Install a persistent private FuelOS energy point at your current position.',
+        badge='Installation',
+        note='The charger or pump interaction point will be created exactly where you are standing.',
+        fields={{key='name',type='text',label='Display name',default=def.label or 'Private Energy Point',required=true,full=true}},
+        actions={{id='cancel',label='Cancel',style='secondary'},{id='install',label='Install here',style='primary'}}
+    })
+    if not input or input.action~='install' or not input.values.name or input.values.name=='' then return end
+    local response=lib.callback.await('ps-fuel:server:installPrivateEnergyPoint',false,itemName,def,input.values.name)
     notify(response and response.message or 'Installation failed.',response and response.success and 'success' or 'error')
     if response and response.success then Wait(300); TriggerEvent('ps-fuel:client:refreshPrivatePoints') end
 end)
@@ -524,10 +547,10 @@ local function loadPrivatePoints()
                     for key,data in pairs(PSFuelConfig.FuelTypes or {}) do if type(data)=='table' then options[#options+1]={value=key,label=data.label or key} end end
                 end
                 local volumeUnit=select(2,S.FormatVolume(1))
-                local fields={{type='number',label=electric and 'kWh' or volumeUnit,default=10,min=.1,max=100,step=.5,required=true}}
-                if not electric then fields[#fields+1]={type='select',label='Fuel type',options=options,default='petrol',required=true} end
-                local input=lib.inputDialog(point.label,fields); if not input then return end
-                local response=lib.callback.await('ps-fuel:server:usePrivatePoint',false,point.id,NetworkGetNetworkIdFromEntity(vehicle),electric and tonumber(input[1]) or S.ToBaseVolume(tonumber(input[1])),electric and 'electric' or input[2],'bank',syncedVehicleClass(vehicle))
+                local tabletFields={{key='amount',type='number',label=electric and 'kWh' or volumeUnit,default=10,min=.1,max=100,step=.5,required=true,full=true}}
+                if not electric then tabletFields[#tabletFields+1]={key='fuelType',type='select',label='Fuel type',options=options,default='petrol',required=true,full=true} end
+                local input=PSFuelTablet.Open({title=point.label,description=electric and 'Private EV charging point' or 'Private fuel point',badge='Private energy',fields=tabletFields,actions={{id='cancel',label='Cancel',style='secondary'},{id='start',label=electric and 'Start charging' or 'Start fuelling',style='primary'}}}); if not input or input.action~='start' then return end
+                local response=lib.callback.await('ps-fuel:server:usePrivatePoint',false,point.id,NetworkGetNetworkIdFromEntity(vehicle),electric and tonumber(input.values.amount) or S.ToBaseVolume(tonumber(input.values.amount)),electric and 'electric' or input.values.fuelType,'bank',syncedVehicleClass(vehicle))
                 if response and response.success then PSFuelRuntime.SetFuel(vehicle,response.fuel) notify(response.message,'success') else notify(response and response.message or 'Energy point failed.','error') end
             end}}})
             privateTargets[#privateTargets+1]=id
@@ -543,11 +566,14 @@ RegisterCommand('fuelhistory',function()
     if not vehicle or vehicle==0 then return notify('No vehicle found.','error') end
     local p=plate(vehicle)
     local rows=lib.callback.await('ps-fuel:server:getFuelHistory',false,p) or {}
-    local options={}
+    local historyRows={}
     for _,row in ipairs(rows) do
-        options[#options+1]={title=('%s · %.1f units'):format(row.fuel_type or 'fuel',tonumber(row.volume) or 0),description=('%s%d · %s · odometer %0.1f km'):format((((PSFuelConfig.Advanced or {}).Units or {}).CurrencySymbol or '£'),tonumber(row.amount_paid) or 0,row.station_id or 'private',tonumber(row.odometer_km) or 0),icon='receipt'}
+        historyRows[#historyRows+1]={
+            label=('%s · %.1f units'):format(row.fuel_type or 'fuel',tonumber(row.volume) or 0),
+            description=('%s · odometer %0.1f km'):format(row.station_id or 'private',tonumber(row.odometer_km) or 0),
+            value=('%s%d'):format((((PSFuelConfig.Advanced or {}).Units or {}).CurrencySymbol or '£'),tonumber(row.amount_paid) or 0)
+        }
     end
-    if #options==0 then options[1]={title='No fuel history',description='This vehicle has no recorded refuelling history.',disabled=true} end
-    lib.registerContext({id='ps_fuel_history',title=('Fuel history · %s'):format(p),options=options})
-    lib.showContext('ps_fuel_history')
+    if #historyRows==0 then historyRows[1]={label='No fuel history',description='This vehicle has no recorded refuelling history.',value='—'} end
+    PSFuelTablet.Open({title=('Fuel history · %s'):format(p),description='Recorded refuelling transactions for this vehicle.',badge='History',rows=historyRows,actions={{id='close',label='Close',style='secondary'}}})
 end,false)

@@ -4,7 +4,7 @@ game 'gta5'
 name 'ps-fuel'
 author 'PS Development / Techy / PLUUUX Solutions'
 description 'Universal multi-fuel and EV energy system with fuel grades, biofuels, aviation fuels, fleet operations and stations'
-version '3.5.0'
+version '3.5.1'
 
 
 ui_page 'web/index.html'

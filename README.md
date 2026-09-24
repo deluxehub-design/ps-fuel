@@ -1,6 +1,6 @@
-# PS Fuel 3.5.0 — Multi-Fuel, Aviation & Biofuel Update
+# PS Fuel 3.5.1 — Multi-Fuel, Aviation & Biofuel Update
 
-PS Fuel 3.5.0 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
+PS Fuel 3.5.1 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
 
 Repository: `deluxehub-evolvenetwork/ps-fuel`
 
@@ -557,7 +557,7 @@ Administrative fleet commands:
 The installed version is read from `fxmanifest.lua`:
 
 ```lua
-version '3.5.0'
+version '3.5.1'
 ```
 
 `version.lua` checks the latest GitHub release from:
@@ -585,7 +585,7 @@ For new code, prefer PS Fuel exports because they update the cache, statebags an
 ## Upgrade from 3.3.0
 
 1. Back up the existing resource and database.
-2. Replace the resource with 3.5.0.
+2. Replace the resource with 3.5.1.
 3. Merge your custom station/model configuration into the new `config.lua`.
 4. Add the new inventory items from `install/items`.
 5. Confirm `ox_lib`, `oxmysql` and `ox_target` start before PS Fuel.
@@ -596,3 +596,8 @@ For new code, prefer PS Fuel exports because they update the cache, statebags an
 ## License
 
 The project retains the licence notices included in the resource. Imported GPL-covered donor code/assets continue to be distributed under their applicable GPL terms.
+
+
+## 3.5.1 unified tablet interface
+
+All interactive PS Fuel menus now use the built-in FuelOS tablet shell. Fuel selection, payment, station ownership and management, employees, trip computer, fuel history, portable fuel transfer, private/home energy points, and vehicle fuel configuration use the same NUI design and focus lifecycle. ox_lib remains in use for gameplay skill checks, progress circles, notifications, and world interaction hints.

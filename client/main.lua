@@ -28,7 +28,37 @@ local function sendFuelNui(payload)
     SendNUIMessage(payload)
 end
 
+local tabletUtilityPromise = nil
+PSFuelTablet = PSFuelTablet or {}
+
+function PSFuelTablet.Open(data)
+    if tabletUtilityPromise then return nil end
+    tabletUtilityPromise = promise.new()
+    uiOpen = true
+    lastFuelMessage = { action = 'utilityOpen', data = data or {} }
+    SetNuiFocus(true, true)
+    SetNuiFocusKeepInput(false)
+    sendFuelNui(lastFuelMessage)
+    return Citizen.Await(tabletUtilityPromise)
+end
+
+local function resolveTabletUtility(result)
+    local pending = tabletUtilityPromise
+    tabletUtilityPromise = nil
+    uiOpen = false
+    lastFuelMessage = nil
+    sendFuelNui({ action = 'reset' })
+    SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
+    if pending then pending:resolve(result) end
+end
+
 local function forceCloseUi(keepPumpSelection, silent, closeTablet)
+    if tabletUtilityPromise then
+        local pending = tabletUtilityPromise
+        tabletUtilityPromise = nil
+        pending:resolve(nil)
+    end
     local wasOpen = uiOpen or lastFuelMessage ~= nil
     uiOpen = false
     activeFuelSession = nil
@@ -577,14 +607,21 @@ local function openStationTablet(station)
     end
 
     if not access.owned then
-        local decision = lib.alertDialog({
-            header = ('Purchase %s'):format(access.label),
-            content = ('This station must be purchased before its management tablet can be used. Purchase price: **£%s**.'):format(access.purchasePrice),
-            centered = true,
-            cancel = true,
-            labels = { confirm = 'Purchase station', cancel = 'Not now' }
+        local decision = PSFuelTablet.Open({
+            title = ('Purchase %s'):format(access.label),
+            description = 'Fuel station acquisition',
+            badge = 'Purchase',
+            rows = {
+                { label = 'Station', value = access.label },
+                { label = 'Purchase price', value = ('£%s'):format(access.purchasePrice) },
+            },
+            note = 'Purchasing this station unlocks its management tablet, pricing, staff, deliveries and operating balance.',
+            actions = {
+                { id = 'cancel', label = 'Not now', style = 'secondary' },
+                { id = 'purchase', label = 'Purchase station', style = 'primary' },
+            }
         })
-        if decision ~= 'confirm' then return end
+        if not decision or decision.action ~= 'purchase' then return end
 
         local purchase = lib.callback.await('ps-fuel:server:buyStation', false, station.id)
         if not purchase or not purchase.success then
@@ -829,6 +866,21 @@ end
 
 RegisterNUICallback('fuelClose', function(_, cb)
     forceCloseUi()
+    cb({ success = true })
+end)
+
+
+RegisterNUICallback('utilitySubmit', function(data, cb)
+    if not tabletUtilityPromise then
+        cb({ success = false, message = 'No tablet action is active.' })
+        return
+    end
+    resolveTabletUtility({ action = data.action or 'submit', values = type(data.values) == 'table' and data.values or {} })
+    cb({ success = true })
+end)
+
+RegisterNUICallback('utilityCancel', function(_, cb)
+    resolveTabletUtility(nil)
     cb({ success = true })
 end)
 
@@ -1319,30 +1371,43 @@ local function openVehicleFuelConfiguration(vehicle)
         familyOptions[#familyOptions + 1] = { value = family, label = (PSFuelConfig.FuelFamilies[family] or {}).label or family }
     end
 
-    local result = lib.inputDialog(('Configure %s'):format(getVehicleLabel(vehicle)), {
-        {
-            type = 'select',
-            label = 'Vehicle energy type',
-            description = 'This applies to every vehicle using this model.',
-            required = true,
-            default = current.source == 'database' and current.fuelType or 'automatic',
-            options = familyOptions,
+    local result = PSFuelTablet.Open({
+        title = ('Configure %s'):format(getVehicleLabel(vehicle)),
+        description = 'Vehicle fuel and energy profile',
+        badge = 'Admin',
+        note = 'This profile applies to every vehicle using this model.',
+        fields = {
+            {
+                key = 'family',
+                type = 'select',
+                label = 'Vehicle energy type',
+                description = 'Choose the fuel family or return the model to automatic detection.',
+                default = current.source == 'database' and current.fuelType or 'automatic',
+                options = familyOptions,
+                full = true,
+            },
+            {
+                key = 'fastCharge',
+                type = 'checkbox',
+                label = 'Supports fast charging',
+                description = 'Only used when the vehicle is configured as electric.',
+                default = current.fastCharge == true,
+                full = true,
+            },
         },
-        {
-            type = 'checkbox',
-            label = 'Supports fast charging',
-            description = 'Only used when the vehicle is configured as electric.',
-            checked = current.fastCharge == true,
-        },
+        actions = {
+            { id = 'cancel', label = 'Cancel', style = 'secondary' },
+            { id = 'save', label = 'Save profile', style = 'primary' },
+        }
     })
-    if not result then return end
+    if not result or result.action ~= 'save' then return end
 
     local response = lib.callback.await(
         'ps-fuel:server:saveVehicleProfile',
         false,
         netId,
-        result[1],
-        result[2] == true,
+        result.values.family,
+        result.values.fastCharge == true,
         modelName
     )
     notify(response and response.message or 'Vehicle configuration failed.', response and response.success and 'success' or 'error')

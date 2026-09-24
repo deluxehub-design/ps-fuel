@@ -3,11 +3,13 @@
   const app = document.getElementById('app');
   const modeLabel = document.getElementById('mode-label');
   const footerStation = document.getElementById('footer-station');
+  const screen = document.querySelector('.screen');
   const resource = typeof GetParentResourceName === 'function' ? GetParentResourceName() : 'ps-fuel';
   let mode = 'refuel';
   let state = {};
   let selectedFuel = null;
   let activeTab = 'overview';
+  let utility = null;
 
   const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const money = (value) => `£${Math.round(Number(value) || 0).toLocaleString('en-GB')}`;
@@ -64,7 +66,7 @@
           </div>
         </form>
       </div>`;
-    document.body.appendChild(overlay);
+    (screen || document.body).appendChild(overlay);
     employeeModal = overlay;
 
     const identifierInput = overlay.querySelector('#employee-identifier');
@@ -111,11 +113,50 @@
     closeEmployeeModal();
     root.classList.remove('visible');
     root.setAttribute('aria-hidden', 'true');
-    post('fuelClose');
+    if (mode === 'utility') post('utilityCancel'); else post('fuelClose');
   };
   const fuelTypes = () => Array.isArray(state.fuelTypes) ? state.fuelTypes : [];
   const allowed = () => new Set(state.vehicle?.allowedFuelTypes || []);
   const chosen = () => fuelTypes().find((fuel) => fuel.id === selectedFuel) || fuelTypes()[0] || {unitPrice:0,label:'Fuel'};
+
+  function utilityField(field) {
+    const key = esc(field.key || 'value');
+    const type = field.type || 'text';
+    const label = esc(field.label || field.key || 'Value');
+    const description = field.description ? `<small>${esc(field.description)}</small>` : '';
+    const full = field.full === true ? ' full' : '';
+    if (type === 'checkbox') {
+      return `<div class="utility-field${full}"><label class="utility-check"><input data-utility-field="${key}" type="checkbox" ${field.default === true ? 'checked' : ''}><span>${label}</span></label>${description}</div>`;
+    }
+    if (type === 'select') {
+      const options = Array.isArray(field.options) ? field.options : [];
+      return `<div class="utility-field${full}"><label class="form-label">${label}</label>${description}<select class="text-input" data-utility-field="${key}">${options.map((option)=>`<option value="${esc(option.value)}" ${String(option.value)===String(field.default??'')?'selected':''}>${esc(option.label ?? option.value)}</option>`).join('')}</select></div>`;
+    }
+    const inputType = type === 'number' ? 'number' : type === 'password' ? 'password' : 'text';
+    const attrs = [field.min != null ? `min="${esc(field.min)}"` : '', field.max != null ? `max="${esc(field.max)}"` : '', field.step != null ? `step="${esc(field.step)}"` : '', field.required === true ? 'required' : ''].filter(Boolean).join(' ');
+    return `<div class="utility-field${full}"><label class="form-label">${label}</label>${description}<input class="text-input" data-utility-field="${key}" type="${inputType}" value="${esc(field.default ?? '')}" ${attrs}></div>`;
+  }
+
+  function utilityView() {
+    const data = utility || {};
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const fields = Array.isArray(data.fields) ? data.fields : [];
+    const actions = Array.isArray(data.actions) && data.actions.length ? data.actions : [{id:'submit',label:'Continue',style:'primary'}];
+    const note = data.note ? `<div class="utility-note">${esc(data.note)}</div>` : '';
+    return `<div class="utility-page">${pageHeader(data.title || 'FuelOS',data.description || 'Fuel system operation',data.badge || 'Tablet')}${note}<article class="utility-card">${rows.length ? `<div class="utility-rows">${rows.map((row)=>`<div class="utility-row"><div><strong>${esc(row.label || '')}</strong>${row.description ? `<small>${esc(row.description)}</small>` : ''}</div><div class="utility-row-value">${esc(row.value ?? '')}</div></div>`).join('')}</div>` : ''}${fields.length ? `<form id="utility-form"><div class="utility-fields">${fields.map(utilityField).join('')}</div></form>` : ''}<div class="utility-actions">${actions.map((action)=>`<button type="button" class="${action.style==='danger'?'danger':action.style==='secondary'?'secondary':'primary'}" data-utility-action="${esc(action.id || 'submit')}">${esc(action.label || 'Continue')}</button>`).join('')}</div></article></div>`;
+  }
+
+  function utilityValues() {
+    const values = {};
+    app.querySelectorAll('[data-utility-field]').forEach((field) => {
+      const key = field.dataset.utilityField;
+      if (!key) return;
+      if (field.type === 'checkbox') values[key] = field.checked === true;
+      else if (field.type === 'number') values[key] = field.value === '' ? null : Number(field.value);
+      else values[key] = field.value;
+    });
+    return values;
+  }
 
   function pageHeader(title, description, badge = 'Online') {
     return `<div class="page-header"><div><p class="eyebrow">PS FUEL OPERATIONS</p><h1>${esc(title)}</h1><p>${esc(description)}</p></div><span class="badge">${esc(badge)}</span></div>`;
@@ -177,7 +218,7 @@
     const employees = Array.isArray(adv.employees) ? adv.employees : [];
     const breakdown = Array.isArray(adv.fuelBreakdown) ? adv.fuelBreakdown : [];
     const level = (key) => Number(stationAdv[key] || 0);
-    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.4')}
+    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.5.1')}
       ${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}
       <div class="grid stats">${stat('Transactions',number(analytics.transactions),'Lifetime station sales')}${stat('Average sale',money(analytics.average_transaction),'Average transaction')}${stat('Wholesale',`${number(adv.wholesaleMultiplier || state.wholesaleMultiplier || 1,2)}×`,'Network wholesale market')}${stat('Maintenance',`${number(stationAdv.maintenance || 100,1)}%`,'Pump and charger condition')}</div>
       <div class="grid two" style="margin-top:12px">
@@ -210,9 +251,10 @@
   }
 
   function render() {
-    modeLabel.textContent = mode === 'admin' ? 'Network administration' : mode === 'station' ? 'Owner management tablet' : 'Fuel type selector';
-    footerStation.textContent = state.label ? String(state.label).toUpperCase() : 'CONNECTED';
-    if (mode === 'admin') app.innerHTML = adminView();
+    modeLabel.textContent = mode === 'utility' ? (utility?.modeLabel || 'FuelOS tablet') : mode === 'admin' ? 'Network administration' : mode === 'station' ? 'Owner management tablet' : 'Fuel type selector';
+    footerStation.textContent = mode === 'utility' ? String(utility?.footer || 'FUELOS').toUpperCase() : state.label ? String(state.label).toUpperCase() : 'CONNECTED';
+    if (mode === 'utility') app.innerHTML = utilityView();
+    else if (mode === 'admin') app.innerHTML = adminView();
     else if (mode === 'refuel') app.innerHTML = refuelView(true);
     else if (activeTab === 'refuel') app.innerHTML = `${pageHeader(state.label || 'Fuel station','Select a compatible fuel type, then use the physical pump','Fuel selector')}${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}${refuelView(false)}`;
     else if (activeTab === 'operations') app.innerHTML = operationsView();
@@ -223,6 +265,19 @@
   }
 
   function bind() {
+    app.querySelectorAll('[data-utility-action]').forEach((button) => button.addEventListener('click', async () => {
+      const action = button.dataset.utilityAction || 'submit';
+      if (action === 'cancel' || action === 'close') {
+        await post('utilityCancel');
+        return;
+      }
+      button.disabled = true;
+      const response = await post('utilitySubmit', {action, values:utilityValues()});
+      if (response?.success === false) {
+        button.disabled = false;
+        toast(response.message || 'Unable to complete this action.', 'error');
+      }
+    }));
     app.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => {activeTab = button.dataset.tab; render();}));
     app.querySelectorAll('[data-fuel]').forEach((button) => button.addEventListener('click', () => {selectedFuel = button.dataset.fuel; render();}));
     document.getElementById('select-fuel')?.addEventListener('click', async (event) => {
@@ -252,8 +307,9 @@
     document.getElementById('add-employee')?.addEventListener('click', openEmployeeModal);
   }
   async function refreshStation(showToast = true){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;if(showToast)toast('Station data synchronised.','success');render();return true;}toast(response?.message||'Refresh failed.','error');return false;}
-  function open(payload){mode=payload.mode||'refuel';state=payload.data||{};activeTab='overview';const valid=fuelTypes().filter((fuel)=>(state.vehicle?.allowedFuelTypes||[]).includes(fuel.id));selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
-  window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='reset'){closeEmployeeModal();root.classList.remove('visible');root.setAttribute('aria-hidden','true');}});
+  function open(payload){mode=payload.mode||'refuel';utility=null;state=payload.data||{};activeTab='overview';const valid=fuelTypes().filter((fuel)=>(state.vehicle?.allowedFuelTypes||[]).includes(fuel.id));selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
+  function openUtility(payload){mode='utility';utility=payload.data||{};state={};activeTab='overview';selectedFuel=null;closeEmployeeModal();root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
+  window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='utilityOpen')openUtility(message);if(message.action==='reset'){closeEmployeeModal();utility=null;root.classList.remove('visible');root.setAttribute('aria-hidden','true');}});
   document.getElementById('close-button').addEventListener('click',close);
   document.addEventListener('keydown',(event)=>{if(event.key!=='Escape')return;if(employeeModal){closeEmployeeModal();return;}close();});
   setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});},1000);

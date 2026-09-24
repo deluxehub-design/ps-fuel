@@ -150,16 +150,27 @@ local function choosePaymentAccount()
     if allowed.cash then options[#options + 1] = { value = 'cash', label = 'Cash' } end
     if #options == 0 then return nil end
 
-    local result = lib.inputDialog('Fuel payment', {
-        {
-            type = 'select',
-            label = 'Payment method',
-            required = true,
-            default = payment.DefaultAccount or 'bank',
-            options = options,
+    local result = PSFuelTablet and PSFuelTablet.Open and PSFuelTablet.Open({
+        title = 'Fuel payment',
+        description = 'Choose how this refuelling session will be paid.',
+        badge = 'Payment',
+        fields = {
+            {
+                key = 'account',
+                type = 'select',
+                label = 'Payment method',
+                default = payment.DefaultAccount or 'bank',
+                options = options,
+                required = true,
+                full = true,
+            }
+        },
+        actions = {
+            { id = 'cancel', label = 'Cancel', style = 'secondary' },
+            { id = 'continue', label = 'Continue', style = 'primary' },
         }
     })
-    return result and result[1] or nil
+    return result and result.action == 'continue' and result.values and result.values.account or nil
 end
 
 local function createHose(anchor, kind)

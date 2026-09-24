@@ -1,3 +1,12 @@
+## 3.5.1
+
+- Restored the physical FuelOS tablet shell across every NUI mode instead of stretching the interface fullscreen.
+- Moved fuel payment, station purchase confirmation, vehicle fuel configuration, trip computer, fuel history, portable-container transfer and private energy-point forms into the FuelOS tablet.
+- Kept employee management inside the tablet screen instead of using a viewport-wide modal.
+- Added a reusable tablet form/confirmation/read-only view bridge for future ps-fuel features.
+- Unified Escape, cancel and NUI focus cleanup paths to reduce stuck mouse/focus issues.
+- Kept skill checks, progress circles, notifications and world prompts as gameplay feedback rather than tablet pages.
+
 # PS Fuel v3.5.0
 
 ## Added
