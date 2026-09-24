@@ -1,4 +1,4 @@
-# PS Fuel 3.5.1 — Multi-Fuel, Aviation & Biofuel Update
+# PS Fuel 3.5.1 — Multi-Fuel, Aviation & Biofuel Update & Tablet UI instead of full screen
 
 PS Fuel 3.5.1 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
 
@@ -544,6 +544,12 @@ install/ps-fuel.sql
 /closefuel
 /psfuelversion                 server console
 ```
+
+# PS Fuel 3.5.1 — Unified Tablet UI
+
+This maintenance release moves every interactive menu and form into the FuelOS tablet shell. It also removes the fullscreen CSS override that hid the tablet frame and centralizes tablet focus/cancel handling.
+
+Gameplay skill checks, progress circles, notifications and world interaction prompts remain lightweight in-world interfaces.
 
 Administrative fleet commands:
 
