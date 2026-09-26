@@ -67,6 +67,105 @@ function A.FuelFamily(fuelType)
     return cfg and cfg.family or fuelType
 end
 
+function A.FuelCategory(fuelType)
+    fuelType = tostring(fuelType or ''):lower()
+    if fuelType == 'electric' or fuelType == 'electric_fast' then return 'electric' end
+    local cfg = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes[fuelType]
+    if not cfg then return nil end
+    if cfg.category then return tostring(cfg.category):lower() end
+
+    -- Backwards-compatible fallback for custom fuel definitions that have not
+    -- yet been given a category explicitly.
+    local family = tostring(cfg.family or fuelType):lower()
+    if family == 'petrol' then return 'road_petrol' end
+    if family == 'diesel' then return 'road_diesel' end
+    if family == 'avgas' then return 'aviation_piston' end
+    if family == 'jet' then return 'aviation_turbine' end
+    if family == 'electric' then return 'electric' end
+    if family == 'methanol' or family == 'nitro' or family == 'rocket' then return 'racing_drag' end
+    return family
+end
+
+function A.FuelCategoryLabel(category)
+    category = tostring(category or ''):lower()
+    local cfg = (PSFuelConfig.FuelCategories or {})[category]
+    return cfg and cfg.label or category
+end
+
+function A.DetectVehicleFuelCategories(model, vehicleClass, baseFamily)
+    model = tonumber(model) or 0
+    vehicleClass = tonumber(vehicleClass)
+    baseFamily = A.NormaliseVehicleFuelFamily(baseFamily) or A.DetectVehicleFuelFamily(model, vehicleClass)
+
+    local categories = {}
+    if baseFamily == 'electric' then
+        categories.electric = true
+        return categories
+    elseif baseFamily == 'diesel' then
+        categories.road_diesel = true
+        return categories
+    elseif baseFamily == 'avgas' then
+        categories.aviation_piston = true
+        return categories
+    elseif baseFamily == 'jet' then
+        categories.aviation_turbine = true
+        return categories
+    elseif baseFamily == 'methanol' or baseFamily == 'nitro' or baseFamily == 'rocket' then
+        categories.racing_drag = true
+        return categories
+    end
+
+    -- Petrol vehicles always receive normal road petrol. Performance/drag
+    -- vehicles additionally receive the racing category rather than replacing
+    -- normal road fuel entirely.
+    categories.road_petrol = true
+
+    if A.IsFlexFuel(model) then categories.flex_fuel = true end
+
+    local detection = PSFuelConfig.VehicleCategoryDetection or {}
+    if (detection.RacingModels and detection.RacingModels[model] == true)
+        or (vehicleClass ~= nil and detection.RacingClasses and detection.RacingClasses[vehicleClass] == true)
+    then
+        categories.racing_drag = true
+    end
+
+    return categories
+end
+
+function A.VehicleSupportsFuelType(model, vehicleClass, baseFamily, fuelType)
+    model = tonumber(model) or 0
+    vehicleClass = tonumber(vehicleClass)
+    baseFamily = A.NormaliseVehicleFuelFamily(baseFamily) or A.DetectVehicleFuelFamily(model, vehicleClass)
+    fuelType = tostring(fuelType or ''):lower()
+
+    if fuelType == 'electric' or fuelType == 'electric_fast' then
+        return baseFamily == 'electric'
+    end
+    if baseFamily == 'electric' then return false end
+
+    local typeCfg = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes[fuelType]
+    if type(typeCfg) ~= 'table' then return false end
+    local category = A.FuelCategory(fuelType)
+    local categories = A.DetectVehicleFuelCategories(model, vehicleClass, baseFamily)
+    if category and categories[category] == true then
+        if typeCfg.requiresFlexFuel == true and not A.IsFlexFuel(model) then return false end
+        return true
+    end
+
+    -- Optional backwards-compatible wrong-fuel mode. It is disabled by default
+    -- so the pump only exposes/accepts the vehicle's detected categories.
+    if ((PSFuelConfig.VehicleCategoryDetection or {}).AllowWrongCategoryFuel) == true then
+        local selectedFamily = tostring(typeCfg.family or fuelType):lower()
+        if selectedFamily == baseFamily then
+            return typeCfg.requiresFlexFuel ~= true or A.IsFlexFuel(model)
+        end
+        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
+            and A.CanCrossContaminate(baseFamily, selectedFamily)
+    end
+
+    return false
+end
+
 function A.GetTankProfile(model, vehicleClass, electric)
     local cfg = ((PSFuelConfig.Advanced or {}).Tanks or {})
     local modelCap = cfg.ModelCapacity and cfg.ModelCapacity[tonumber(model)]

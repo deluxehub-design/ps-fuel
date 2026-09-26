@@ -161,6 +161,17 @@ local function refreshVehicleState(vehicle)
     if state then vehicleState[plate(vehicle)] = state end
 end
 
+AddEventHandler('ps-fuel:vehicleRefuelled', function(vehicle, fuelType)
+    if not vehicle or vehicle == 0 or not DoesEntityExist(vehicle) then return end
+    if S.FuelFamily(fuelType) ~= 'electric' then return end
+    -- Refresh once after charging completes so exports/UI immediately report the
+    -- restored EV battery-health condition as well as the new charge level.
+    CreateThread(function()
+        Wait(150)
+        refreshVehicleState(vehicle)
+    end)
+end)
+
 CreateThread(function()
     while true do
         local vehicle = cache.vehicle

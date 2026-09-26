@@ -1,3 +1,14 @@
+## 3.5.2
+
+- Added automatic vehicle fuel-category detection for road petrol, flex fuel, road diesel, piston aviation, jet/turbine, racing/drag and electric vehicles.
+- Refuelling UI now renders only fuels compatible with the detected vehicle category instead of showing every configured fuel type.
+- Added server-side fuel-category validation so incompatible fuels cannot be purchased by bypassing the NUI.
+- Added configurable racing/drag model overrides and enabled the racing category for GTA Muscle, Sports and Super vehicle classes.
+- Assigned Race Fuel 100, Methanol, Nitromethane, RP-1 Rocket Kerosene and Rocket Propellant to the racing/drag category.
+- Removed the Thruster-specific rocket-fuel assumption; turbine/jet vehicles use the aviation/turbine category unless explicitly overridden.
+- EV charging can now restore both charge percentage and persistent EV battery health during the same charging session.
+- Updated FuelOS and resource version metadata to 3.5.2.
+
 ## 3.5.1
 
 - Restored the physical FuelOS tablet shell across every NUI mode instead of stretching the interface fullscreen.

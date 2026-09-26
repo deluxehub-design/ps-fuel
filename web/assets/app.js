@@ -117,7 +117,8 @@
   };
   const fuelTypes = () => Array.isArray(state.fuelTypes) ? state.fuelTypes : [];
   const allowed = () => new Set(state.vehicle?.allowedFuelTypes || []);
-  const chosen = () => fuelTypes().find((fuel) => fuel.id === selectedFuel) || fuelTypes()[0] || {unitPrice:0,label:'Fuel'};
+  const visibleFuelTypes = () => state.vehicle ? fuelTypes().filter((fuel) => allowed().has(fuel.id)) : fuelTypes();
+  const chosen = () => visibleFuelTypes().find((fuel) => fuel.id === selectedFuel) || visibleFuelTypes()[0] || {unitPrice:0,label:'Fuel'};
 
   function utilityField(field) {
     const key = esc(field.key || 'value');
@@ -170,7 +171,7 @@
 
   function refuelView(includeHeader = true) {
     if (!state.vehicle) return `<article class="card empty"><div><strong>No vehicle detected</strong><p>Park beside a pump to select a fuel type.</p></div></article>`;
-    const valid = fuelTypes().filter((fuel) => allowed().has(fuel.id));
+    const valid = visibleFuelTypes();
     if (!selectedFuel || !allowed().has(selectedFuel)) selectedFuel = valid[0]?.id || null;
     const fuel = chosen();
     const current = Number(state.vehicle.fuel) || 0;
@@ -178,13 +179,10 @@
       <div class="fuel-layout">
         <div>
           <article class="card vehicle-card">
-            <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : (state.vehicle.fuelFamilyLabel || (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle'))}</span></div>
+            <div class="vehicle-head"><div><div class="vehicle-name">${esc(state.vehicle.label)}</div><span class="vehicle-plate">${esc(state.vehicle.plate)}</span></div><span class="badge">${state.vehicle.electric ? (state.vehicle.fastCharge ? 'Fast-charge EV' : 'Electric vehicle') : ((state.vehicle.fuelCategoryLabels || []).join(' · ') || state.vehicle.fuelFamilyLabel || (state.vehicle.diesel ? 'Diesel vehicle' : 'Petrol vehicle'))}</span></div>
             <div class="gauge-row"><div class="gauge"><div class="gauge-fill" style="width:${Math.min(100,current)}%"></div></div><div class="gauge-value">${number(current,1)}% · ${number(state.vehicle.volume,1)} / ${number(state.vehicle.capacity,1)} ${state.vehicle.electric ? 'kWh' : 'L'}</div></div>
           </article>
-          <div class="fuel-types">${fuelTypes().map((item) => {
-            const enabled = allowed().has(item.id);
-            return `<button class="fuel-type ${selectedFuel === item.id ? 'selected' : ''} ${enabled ? '' : 'disabled'}" data-fuel="${esc(item.id)}" ${enabled ? '' : 'disabled'} style="--fuel-accent:${esc(item.accent || '#1ee8ef')}"><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small><div class="fuel-price">${money(item.unitPrice)} / ${state.vehicle?.electric ? 'kWh' : 'L'}</div></button>`;
-          }).join('')}</div>
+          <div class="fuel-types">${valid.map((item) => `<button class="fuel-type ${selectedFuel === item.id ? 'selected' : ''}" data-fuel="${esc(item.id)}" style="--fuel-accent:${esc(item.accent || '#1ee8ef')}"><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small><div class="fuel-price">${money(item.unitPrice)} / ${state.vehicle?.electric ? 'kWh' : 'L'}</div></button>`).join('')}</div>
         </div>
         <article class="card amount-panel">
           <div class="section-title"><h2>Physical pump control</h2><span>Step 1 of 2</span></div>
@@ -218,7 +216,7 @@
     const employees = Array.isArray(adv.employees) ? adv.employees : [];
     const breakdown = Array.isArray(adv.fuelBreakdown) ? adv.fuelBreakdown : [];
     const level = (key) => Number(stationAdv[key] || 0);
-    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.5.1')}
+    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.5.2')}
       ${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}
       <div class="grid stats">${stat('Transactions',number(analytics.transactions),'Lifetime station sales')}${stat('Average sale',money(analytics.average_transaction),'Average transaction')}${stat('Wholesale',`${number(adv.wholesaleMultiplier || state.wholesaleMultiplier || 1,2)}×`,'Network wholesale market')}${stat('Maintenance',`${number(stationAdv.maintenance || 100,1)}%`,'Pump and charger condition')}</div>
       <div class="grid two" style="margin-top:12px">
@@ -307,7 +305,7 @@
     document.getElementById('add-employee')?.addEventListener('click', openEmployeeModal);
   }
   async function refreshStation(showToast = true){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;if(showToast)toast('Station data synchronised.','success');render();return true;}toast(response?.message||'Refresh failed.','error');return false;}
-  function open(payload){mode=payload.mode||'refuel';utility=null;state=payload.data||{};activeTab='overview';const valid=fuelTypes().filter((fuel)=>(state.vehicle?.allowedFuelTypes||[]).includes(fuel.id));selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
+  function open(payload){mode=payload.mode||'refuel';utility=null;state=payload.data||{};activeTab='overview';const valid=visibleFuelTypes();selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
   function openUtility(payload){mode='utility';utility=payload.data||{};state={};activeTab='overview';selectedFuel=null;closeEmployeeModal();root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}
   window.addEventListener('message',(event)=>{const message=event.data||{};if(message.action==='open')open(message);if(message.action==='utilityOpen')openUtility(message);if(message.action==='reset'){closeEmployeeModal();utility=null;root.classList.remove('visible');root.setAttribute('aria-hidden','true');}});
   document.getElementById('close-button').addEventListener('click',close);

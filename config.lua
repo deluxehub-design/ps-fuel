@@ -416,6 +416,33 @@ PSFuelConfig.FuelFamilies = {
     electric = { label = 'Electric', electric = true },
 }
 
+-- Fuel categories control what a driver actually sees at the pump. The vehicle
+-- category is detected automatically, so incompatible fuel grades are hidden
+-- instead of appearing as disabled choices in the refuelling terminal.
+PSFuelConfig.FuelCategories = {
+    road_petrol = { label = 'Road Petrol' },
+    flex_fuel = { label = 'Flex Fuel / Ethanol' },
+    road_diesel = { label = 'Road Diesel' },
+    racing_drag = { label = 'Racing / Drag Fuel' },
+    aviation_piston = { label = 'Piston Aviation Fuel' },
+    aviation_turbine = { label = 'Jet / Turbine Fuel' },
+    electric = { label = 'Electric Charging' },
+}
+
+PSFuelConfig.VehicleCategoryDetection = {
+    -- GTA vehicle classes: 4 Muscle, 6 Sports, 7 Super. These vehicles keep
+    -- their normal petrol choices and additionally get Racing / Drag Fuel.
+    RacingClasses = { [4] = true, [6] = true, [7] = true },
+
+    -- Add custom drag/race model hashes here if their GTA class is not one of
+    -- the classes above. Example: [`my_drag_car`] = true,
+    RacingModels = {},
+
+    -- Wrong-category fuel is hidden and rejected by default. Turn this on only
+    -- if you deliberately want the old wrong-fuel/contamination gameplay.
+    AllowWrongCategoryFuel = false,
+}
+
 -- Automatic family overrides for models that should not use the normal road-fuel rules.
 -- Any vehicle can still be changed at runtime with /fuelvehicleconfig.
 PSFuelConfig.VehicleFuelFamilyModels = {
@@ -426,7 +453,7 @@ PSFuelConfig.VehicleFuelFamilyModels = {
     [`velum2`] = 'avgas',
     [`seabreeze`] = 'avgas',
     [`microlight`] = 'avgas',
-    [`thruster`] = 'rocket',
+    [`thruster`] = 'jet',
 }
 
 PSFuelConfig.FuelTypes = {
@@ -434,68 +461,68 @@ PSFuelConfig.FuelTypes = {
 
     petrol = {
         label = 'Regular 87', description = '87 octane regular unleaded.', priceMultiplier = 1.00,
-        transactionType = 'fuel_petrol', family = 'petrol', octane = 87, consumptionMultiplier = 1.00,
+        transactionType = 'fuel_petrol', family = 'petrol', category = 'road_petrol', octane = 87, consumptionMultiplier = 1.00,
         sortOrder = 10, accent = '#18d8e8',
     },
     midgrade = {
         label = 'Midgrade 89', description = '89 octane midgrade petrol.', priceMultiplier = 1.12,
-        transactionType = 'fuel_midgrade', family = 'petrol', octane = 89, consumptionMultiplier = 0.995,
+        transactionType = 'fuel_midgrade', family = 'petrol', category = 'road_petrol', octane = 89, consumptionMultiplier = 0.995,
         sortOrder = 20, accent = '#22c55e',
     },
     premium = {
         label = 'Premium 91', description = '91 octane premium unleaded.', priceMultiplier = 1.35,
-        transactionType = 'fuel_premium', family = 'petrol', octane = 91, consumptionMultiplier = 0.985,
+        transactionType = 'fuel_premium', family = 'petrol', category = 'road_petrol', octane = 91, consumptionMultiplier = 0.985,
         sortOrder = 30, accent = '#a78bfa',
     },
     premium93 = {
         label = 'Premium 93', description = '93 octane premium petrol for high-performance engines.', priceMultiplier = 1.48,
-        transactionType = 'fuel_premium93', family = 'petrol', octane = 93, consumptionMultiplier = 0.975,
+        transactionType = 'fuel_premium93', family = 'petrol', category = 'road_petrol', octane = 93, consumptionMultiplier = 0.975,
         sortOrder = 40, accent = '#8b5cf6',
     },
     premium98 = {
         label = 'Premium 98', description = '98 RON-style premium petrol for tuned and performance vehicles.', priceMultiplier = 1.58,
-        transactionType = 'fuel_premium98', family = 'petrol', octane = 98, consumptionMultiplier = 0.97,
+        transactionType = 'fuel_premium98', family = 'petrol', category = 'road_petrol', octane = 98, consumptionMultiplier = 0.97,
         sortOrder = 50, accent = '#7c3aed',
     },
     benzin95 = {
         label = 'Benzin 95', description = 'European-style 95 grade petrol.', priceMultiplier = 1.40,
-        transactionType = 'fuel_benzin95', family = 'petrol', octane = 95, consumptionMultiplier = 0.98,
+        transactionType = 'fuel_benzin95', family = 'petrol', category = 'road_petrol', octane = 95, consumptionMultiplier = 0.98,
         sortOrder = 60, accent = '#06b6d4',
     },
     benzin98 = {
         label = 'Benzin 98', description = 'European-style 98 grade premium petrol.', priceMultiplier = 1.56,
-        transactionType = 'fuel_benzin98', family = 'petrol', octane = 98, consumptionMultiplier = 0.97,
+        transactionType = 'fuel_benzin98', family = 'petrol', category = 'road_petrol', octane = 98, consumptionMultiplier = 0.97,
         sortOrder = 70, accent = '#0891b2',
     },
     race100 = {
         label = 'Race Fuel 100', description = '100 octane unleaded race fuel for configured performance vehicles.', priceMultiplier = 1.90,
-        transactionType = 'fuel_race100', family = 'petrol', octane = 100, consumptionMultiplier = 0.96,
+        transactionType = 'fuel_race100', family = 'petrol', category = 'racing_drag', octane = 100, consumptionMultiplier = 0.96,
         sortOrder = 80, accent = '#ec4899',
     },
     e10 = {
         label = 'E10', description = 'Petrol blended with up to 10% ethanol.', priceMultiplier = 0.98,
-        transactionType = 'fuel_e10', family = 'petrol', octane = 88, ethanol = 10, consumptionMultiplier = 1.02,
+        transactionType = 'fuel_e10', family = 'petrol', category = 'road_petrol', octane = 88, ethanol = 10, consumptionMultiplier = 1.02,
         sortOrder = 90, accent = '#65a30d',
     },
     e15 = {
         label = 'E15', description = 'Petrol blended with up to 15% ethanol.', priceMultiplier = 0.96,
-        transactionType = 'fuel_e15', family = 'petrol', octane = 90, ethanol = 15, consumptionMultiplier = 1.04,
+        transactionType = 'fuel_e15', family = 'petrol', category = 'road_petrol', octane = 90, ethanol = 15, consumptionMultiplier = 1.04,
         sortOrder = 100, accent = '#4d7c0f',
     },
     e85 = {
         label = 'E85 Bioethanol', description = 'High-ethanol biofuel for configured flex-fuel vehicles.', priceMultiplier = 0.94,
-        transactionType = 'fuel_e85', family = 'petrol', octane = 100, ethanol = 85, requiresFlexFuel = true,
+        transactionType = 'fuel_e85', family = 'petrol', category = 'flex_fuel', octane = 100, ethanol = 85, requiresFlexFuel = true,
         consumptionMultiplier = 1.22, sortOrder = 110, accent = '#84cc16',
     },
     e100 = {
         label = 'E100 Bioethanol', description = 'Near-pure ethanol for dedicated/flex-fuel engines.', priceMultiplier = 0.92,
-        transactionType = 'fuel_e100', family = 'petrol', octane = 105, ethanol = 100, requiresFlexFuel = true,
+        transactionType = 'fuel_e100', family = 'petrol', category = 'flex_fuel', octane = 105, ethanol = 100, requiresFlexFuel = true,
         consumptionMultiplier = 1.30, sortOrder = 120, accent = '#a3e635',
     },
 
     diesel = {
         label = 'Diesel', description = 'Standard road and commercial diesel.', priceMultiplier = 1.12,
-        transactionType = 'fuel_diesel', family = 'diesel', cetane = 45, consumptionMultiplier = 1.00,
+        transactionType = 'fuel_diesel', family = 'diesel', category = 'road_diesel', cetane = 45, consumptionMultiplier = 1.00,
         sortOrder = 200, accent = '#f59e0b',
         AllowedClasses = { [10]=true, [11]=true, [12]=true, [20]=true },
         Models = {
@@ -506,99 +533,99 @@ PSFuelConfig.FuelTypes = {
     },
     diesel_premium = {
         label = 'Premium Diesel', description = 'Higher-cetane premium diesel.', priceMultiplier = 1.24,
-        transactionType = 'fuel_diesel_premium', family = 'diesel', cetane = 52, consumptionMultiplier = 0.98,
+        transactionType = 'fuel_diesel_premium', family = 'diesel', category = 'road_diesel', cetane = 52, consumptionMultiplier = 0.98,
         sortOrder = 210, accent = '#f97316',
     },
     ulsd = {
         label = 'ULSD', description = 'Ultra-low-sulfur diesel for modern road and commercial engines.', priceMultiplier = 1.17,
-        transactionType = 'fuel_ulsd', family = 'diesel', cetane = 48, consumptionMultiplier = 0.99,
+        transactionType = 'fuel_ulsd', family = 'diesel', category = 'road_diesel', cetane = 48, consumptionMultiplier = 0.99,
         sortOrder = 220, accent = '#fb923c',
     },
     biodiesel_b5 = {
         label = 'B5 Biodiesel', description = 'Diesel blended with 5% biodiesel.', priceMultiplier = 1.10,
-        transactionType = 'fuel_b5', family = 'diesel', bio = 5, consumptionMultiplier = 1.00,
+        transactionType = 'fuel_b5', family = 'diesel', category = 'road_diesel', bio = 5, consumptionMultiplier = 1.00,
         sortOrder = 230, accent = '#84cc16',
     },
     biodiesel_b20 = {
         label = 'B20 Biodiesel', description = 'Diesel blended with 20% biodiesel.', priceMultiplier = 1.08,
-        transactionType = 'fuel_b20', family = 'diesel', bio = 20, consumptionMultiplier = 1.03,
+        transactionType = 'fuel_b20', family = 'diesel', category = 'road_diesel', bio = 20, consumptionMultiplier = 1.03,
         sortOrder = 240, accent = '#65a30d',
     },
     biodiesel_b100 = {
         label = 'B100 Biodiesel', description = '100% biodiesel for compatible diesel engines.', priceMultiplier = 1.05,
-        transactionType = 'fuel_b100', family = 'diesel', bio = 100, consumptionMultiplier = 1.08,
+        transactionType = 'fuel_b100', family = 'diesel', category = 'road_diesel', bio = 100, consumptionMultiplier = 1.08,
         sortOrder = 250, accent = '#4d7c0f',
     },
     hvo100 = {
         label = 'HVO100 Renewable Diesel', description = 'Renewable paraffinic diesel alternative.', priceMultiplier = 1.28,
-        transactionType = 'fuel_hvo100', family = 'diesel', bio = 100, consumptionMultiplier = 0.99,
+        transactionType = 'fuel_hvo100', family = 'diesel', category = 'road_diesel', bio = 100, consumptionMultiplier = 0.99,
         sortOrder = 260, accent = '#10b981',
     },
     renewable_diesel = {
         label = 'Renewable Diesel R99', description = 'High-renewable-content drop-in diesel.', priceMultiplier = 1.25,
-        transactionType = 'fuel_r99', family = 'diesel', bio = 99, consumptionMultiplier = 0.99,
+        transactionType = 'fuel_r99', family = 'diesel', category = 'road_diesel', bio = 99, consumptionMultiplier = 0.99,
         sortOrder = 270, accent = '#14b8a6',
     },
     marine_diesel = {
         label = 'Marine Diesel', description = 'Commercial diesel grade for marine and heavy-duty applications.', priceMultiplier = 1.18,
-        transactionType = 'fuel_marine_diesel', family = 'diesel', cetane = 45, consumptionMultiplier = 1.02,
+        transactionType = 'fuel_marine_diesel', family = 'diesel', category = 'road_diesel', cetane = 45, consumptionMultiplier = 1.02,
         sortOrder = 280, accent = '#0ea5e9',
     },
 
     avgas100ll = {
         label = 'Avgas 100LL', description = '100LL aviation gasoline for piston aircraft.', priceMultiplier = 2.15,
-        transactionType = 'fuel_avgas100ll', family = 'avgas', octane = 100, consumptionMultiplier = 1.00,
+        transactionType = 'fuel_avgas100ll', family = 'avgas', category = 'aviation_piston', octane = 100, consumptionMultiplier = 1.00,
         sortOrder = 300, accent = '#38bdf8',
     },
     avgas_ul94 = {
         label = 'Avgas UL94', description = 'Unleaded aviation gasoline for compatible piston aircraft.', priceMultiplier = 2.05,
-        transactionType = 'fuel_avgas_ul94', family = 'avgas', octane = 94, consumptionMultiplier = 1.00,
+        transactionType = 'fuel_avgas_ul94', family = 'avgas', category = 'aviation_piston', octane = 94, consumptionMultiplier = 1.00,
         sortOrder = 310, accent = '#0ea5e9',
     },
     jet_a = {
         label = 'Jet A', description = 'Aviation turbine fuel for jet and turbine aircraft.', priceMultiplier = 2.05,
-        transactionType = 'fuel_jet_a', family = 'jet', consumptionMultiplier = 1.00,
+        transactionType = 'fuel_jet_a', family = 'jet', category = 'aviation_turbine', consumptionMultiplier = 1.00,
         sortOrder = 320, accent = '#64748b',
     },
     jet_a1 = {
         label = 'Jet A-1', description = 'International aviation turbine fuel for jet and turbine aircraft.', priceMultiplier = 2.12,
-        transactionType = 'fuel_jet_a1', family = 'jet', consumptionMultiplier = 1.00,
+        transactionType = 'fuel_jet_a1', family = 'jet', category = 'aviation_turbine', consumptionMultiplier = 1.00,
         sortOrder = 330, accent = '#475569',
     },
     saf50 = {
         label = 'SAF 50 Blend', description = 'Sustainable aviation fuel blend for compatible turbine aircraft.', priceMultiplier = 2.42,
-        transactionType = 'fuel_saf50', family = 'jet', bio = 50, consumptionMultiplier = 1.00,
+        transactionType = 'fuel_saf50', family = 'jet', category = 'aviation_turbine', bio = 50, consumptionMultiplier = 1.00,
         sortOrder = 340, accent = '#22c55e',
     },
     saf100 = {
         label = 'SAF 100', description = 'Synthetic/sustainable aviation fuel for configured turbine aircraft.', priceMultiplier = 2.75,
-        transactionType = 'fuel_saf100', family = 'jet', bio = 100, consumptionMultiplier = 1.01,
+        transactionType = 'fuel_saf100', family = 'jet', category = 'aviation_turbine', bio = 100, consumptionMultiplier = 1.01,
         sortOrder = 350, accent = '#16a34a',
     },
     jp8 = {
         label = 'JP-8', description = 'Military-style turbine fuel for configured aircraft and vehicles.', priceMultiplier = 2.30,
-        transactionType = 'fuel_jp8', family = 'jet', consumptionMultiplier = 1.02,
+        transactionType = 'fuel_jp8', family = 'jet', category = 'aviation_turbine', consumptionMultiplier = 1.02,
         sortOrder = 360, accent = '#78716c',
     },
 
     methanol = {
         label = 'Methanol M100', description = 'Methanol racing fuel for vehicles configured for methanol.', priceMultiplier = 1.70,
-        transactionType = 'fuel_methanol', family = 'methanol', consumptionMultiplier = 1.45,
+        transactionType = 'fuel_methanol', family = 'methanol', category = 'racing_drag', consumptionMultiplier = 1.45,
         sortOrder = 400, accent = '#f43f5e',
     },
     nitromethane = {
         label = 'Nitromethane Race Fuel', description = 'Special racing fuel for vehicles explicitly configured for nitromethane.', priceMultiplier = 3.50,
-        transactionType = 'fuel_nitromethane', family = 'nitro', consumptionMultiplier = 1.80,
+        transactionType = 'fuel_nitromethane', family = 'nitro', category = 'racing_drag', consumptionMultiplier = 1.80,
         sortOrder = 410, accent = '#ef4444',
     },
     rp1 = {
-        label = 'RP-1 Rocket Kerosene', description = 'Special rocket-grade kerosene for configured rocket vehicles.', priceMultiplier = 4.50,
-        transactionType = 'fuel_rp1', family = 'rocket', consumptionMultiplier = 1.00,
+        label = 'RP-1 Rocket Kerosene', description = 'Extreme racing/drag fuel for vehicles detected or configured for the racing category.', priceMultiplier = 4.50,
+        transactionType = 'fuel_rp1', family = 'rocket', category = 'racing_drag', consumptionMultiplier = 1.00,
         sortOrder = 500, accent = '#f97316',
     },
     rocket_fuel = {
-        label = 'Rocket Propellant', description = 'Gameplay rocket propellant for vehicles explicitly configured as rocket-powered.', priceMultiplier = 6.00,
-        transactionType = 'fuel_rocket', family = 'rocket', consumptionMultiplier = 1.00,
+        label = 'Rocket Propellant', description = 'Extreme gameplay fuel reserved for detected/configured racing and drag vehicles.', priceMultiplier = 6.00,
+        transactionType = 'fuel_rocket', family = 'rocket', category = 'racing_drag', consumptionMultiplier = 1.00,
         sortOrder = 510, accent = '#dc2626',
     },
 }
@@ -753,6 +780,11 @@ PSFuelConfig.Advanced = {
     },
     EV = {
         BatteryHealthEnabled = true,
+        -- Charging restores the stored EV battery-health condition at the same
+        -- time as the charge level. A value of 1.0 means +1 battery-health point
+        -- for each +1% charge purchased, capped at 100%.
+        ChargingRestoresBatteryHealth = true,
+        BatteryHealthRestorePerChargePercent = 1.0,
         ChargingCurveEnabled = true,
         SlowdownStartPercent = 80,
         MinimumChargeRateMultiplier = 0.25,

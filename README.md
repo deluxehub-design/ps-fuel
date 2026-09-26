@@ -1,6 +1,6 @@
-# PS Fuel 3.5.1 — Multi-Fuel, Aviation & Biofuel Update & Tablet UI instead of full screen
+# PS Fuel 3.5.2 — Vehicle Fuel Category Auto-Detection
 
-PS Fuel 3.5.1 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
+PS Fuel 3.5.2 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
 
 Repository: `deluxehub-evolvenetwork/ps-fuel`
 
@@ -545,12 +545,6 @@ install/ps-fuel.sql
 /psfuelversion                 server console
 ```
 
-# PS Fuel 3.5.1 — Unified Tablet UI
-
-This maintenance release moves every interactive menu and form into the FuelOS tablet shell. It also removes the fullscreen CSS override that hid the tablet frame and centralizes tablet focus/cancel handling.
-
-Gameplay skill checks, progress circles, notifications and world interaction prompts remain lightweight in-world interfaces.
-
 Administrative fleet commands:
 
 ```text
@@ -563,7 +557,7 @@ Administrative fleet commands:
 The installed version is read from `fxmanifest.lua`:
 
 ```lua
-version '3.5.1'
+version '3.5.2'
 ```
 
 `version.lua` checks the latest GitHub release from:
@@ -591,7 +585,7 @@ For new code, prefer PS Fuel exports because they update the cache, statebags an
 ## Upgrade from 3.3.0
 
 1. Back up the existing resource and database.
-2. Replace the resource with 3.5.1.
+2. Replace the resource with 3.5.2.
 3. Merge your custom station/model configuration into the new `config.lua`.
 4. Add the new inventory items from `install/items`.
 5. Confirm `ox_lib`, `oxmysql` and `ox_target` start before PS Fuel.
@@ -602,6 +596,12 @@ For new code, prefer PS Fuel exports because they update the cache, statebags an
 ## License
 
 The project retains the licence notices included in the resource. Imported GPL-covered donor code/assets continue to be distributed under their applicable GPL terms.
+
+
+
+## 3.5.2 vehicle fuel category auto-detection
+
+PS Fuel now automatically detects the vehicle's compatible fuel category and only displays matching fuels at the pump. Petrol, diesel, flex-fuel, aviation, racing/drag and electric energy types are separated instead of showing every fuel type for every vehicle. Muscle, Sports and Super vehicles can expose the racing/drag category, with configurable model overrides for custom drag vehicles. EV charging now restores both charge level and EV battery health during the same charging session when enabled.
 
 
 ## 3.5.1 unified tablet interface

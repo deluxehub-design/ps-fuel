@@ -58,7 +58,7 @@ local function discord(title, description, fields)
     local dc = cfg('Discord', {})
     if dc.Enabled ~= true or not dc.Webhook or dc.Webhook == '' then return end
     local payload = {
-        username = 'PS Fuel 3.5.1',
+        username = 'PS Fuel 3.5.2',
         embeds = {{
             title = title,
             description = description,
@@ -214,7 +214,7 @@ local function ensureSchema()
     MySQL.query.await([[INSERT IGNORE INTO ps_fuel_settings (setting_key, setting_value) VALUES ('wholesale_multiplier','1.0')]])
     wholesaleMultiplier = tonumber(MySQL.scalar.await("SELECT setting_value FROM ps_fuel_settings WHERE setting_key='wholesale_multiplier'")) or 1.0
     ready = true
-    print('[ps-fuel] Advanced 3.5.1 database ready.')
+    print('[ps-fuel] Advanced 3.5.2 database ready.')
 end
 
 CreateThread(function()
@@ -353,7 +353,10 @@ function A.RecordPurchase(data)
         local intended = tostring(state.fuel_family or family)
         local selectedCfg=(PSFuelConfig.FuelTypes or {})[fuelType]
         local flexMismatch=selectedCfg and selectedCfg.requiresFlexFuel==true and not S.IsFlexFuel(model)
-        if (family ~= intended and family ~= 'electric') or flexMismatch then
+        local category = S.FuelCategory(fuelType)
+        local detectedCategories = S.DetectVehicleFuelCategories(model, class, intended)
+        local categoryCompatible = electric or (category and detectedCategories[category] == true and not flexMismatch)
+        if not categoryCompatible and ((family ~= intended and family ~= 'electric') or flexMismatch) then
             contamination = S.Clamp(contamination + (volume / math.max(1, tonumber(state.capacity) or 60)), 0, 1)
         elseif cfg('FuelQuality.DilutionRecovery', true) == true then
             contamination = S.Clamp(contamination - (volume / math.max(1, tonumber(state.capacity) or 60)) * 0.75, 0, 1)
@@ -361,6 +364,14 @@ function A.RecordPurchase(data)
         MySQL.update.await([[UPDATE ps_fuel_vehicle_energy SET last_fuel_type=?, mixture_json=?, contamination=?,
             lifetime_fuel=lifetime_fuel+?, lifetime_cost=lifetime_cost+?, trip_fuel=trip_fuel+?, trip_cost=trip_cost+? WHERE plate=?]],
             { fuelType, json.encode(mixture), contamination, volume, price, volume, price, plate })
+
+        if electric and cfg('EV.BatteryHealthEnabled', true) == true and cfg('EV.ChargingRestoresBatteryHealth', true) == true then
+            local restorePerPercent = math.max(0, tonumber(cfg('EV.BatteryHealthRestorePerChargePercent', 1.0)) or 1.0)
+            local restore = math.max(0, tonumber(data.percent) or 0) * restorePerPercent
+            if restore > 0 then
+                MySQL.update.await('UPDATE ps_fuel_vehicle_energy SET ev_battery_health=LEAST(100,ev_battery_health+?) WHERE plate=?', { restore, plate })
+            end
+        end
         MySQL.insert.await([[INSERT INTO ps_fuel_vehicle_history (plate,station_id,fuel_type,volume,amount_paid,odometer_km)
             VALUES (?,?,?,?,?,?)]], { plate, data.stationId, fuelType, volume, price, tonumber(state.odometer_km) or 0 })
     end

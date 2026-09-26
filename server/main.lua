@@ -368,33 +368,31 @@ end
 local function vehicleFuelTypeAllowed(vehicle, fuelType, reportedVehicleClass)
     if vehicle == 0 or GetEntityType(vehicle) ~= 2 then return false end
     fuelType = tostring(fuelType or ''):lower()
-    local profile = configuredVehicleProfile(GetEntityModel(vehicle), reportedVehicleClass)
-    if fuelType == 'electric' then return profile.fuelType == 'electric' end
-    if fuelType == 'electric_fast' then return profile.fuelType == 'electric' and profile.fastCharge == true end
-    if profile.fuelType == 'electric' then return false end
-    local typeConfig = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes[fuelType]
-    if not typeConfig then return false end
-    local family = tostring(typeConfig.family or fuelType):lower()
-    if family ~= profile.fuelType then
-        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
-            and PSFuelAdvancedShared.CanCrossContaminate(profile.fuelType, family)
+    local model = GetEntityModel(vehicle)
+    local profile = configuredVehicleProfile(model, reportedVehicleClass)
+    if fuelType == 'electric_fast' then
+        return profile.fuelType == 'electric' and profile.fastCharge == true
     end
-    if typeConfig.requiresFlexFuel == true and not PSFuelAdvancedShared.IsFlexFuel(GetEntityModel(vehicle)) then
-        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
-    end
-    return true
+    return PSFuelAdvancedShared.VehicleSupportsFuelType(
+        model,
+        reportedVehicleClass,
+        profile.fuelType,
+        fuelType
+    )
 end
 
-local function serialiseFuelTypes(station, player, vehicleClass, includeElectric, includeFastCharge)
+local function serialiseFuelTypes(station, player, vehicleClass, includeElectric, includeFastCharge, vehicle)
     local result = {}
     local discount = emergencyDiscount(player, vehicleClass)
 
     for key, data in pairs(PSFuelConfig.FuelTypes or {}) do
-        if type(data) == 'table' then
+        if type(data) == 'table' and (not vehicle or vehicleFuelTypeAllowed(vehicle, key, vehicleClass)) then
             result[#result + 1] = {
                 id = key,
                 label = data.label or key,
                 description = data.description or '',
+                category = PSFuelAdvancedShared.FuelCategory(key),
+                categoryLabel = PSFuelAdvancedShared.FuelCategoryLabel(PSFuelAdvancedShared.FuelCategory(key)),
                 accent = data.accent or '#18d8e8',
                 priceMultiplier = tonumber(data.priceMultiplier) or 1.0,
                 unitPrice = applyDiscount(fuelUnitPrice(station, false, key), discount),
@@ -407,7 +405,9 @@ local function serialiseFuelTypes(station, player, vehicleClass, includeElectric
         result[#result + 1] = {
             id = 'electric',
             label = 'Standard charge',
-            description = 'Standard-output charging for configured electric vehicles.',
+            description = 'Charges the EV and restores battery health at the same time.',
+            category = 'electric',
+            categoryLabel = PSFuelAdvancedShared.FuelCategoryLabel('electric'),
             accent = '#22c55e',
             priceMultiplier = 1.0,
             unitPrice = applyDiscount(fuelUnitPrice(station, true, 'electric'), discount),
@@ -420,6 +420,8 @@ local function serialiseFuelTypes(station, player, vehicleClass, includeElectric
                 id = 'electric_fast',
                 label = fast.Label or 'Fast charge',
                 description = fast.Description or 'Higher-output charging for compatible electric vehicles.',
+                category = 'electric',
+                categoryLabel = PSFuelAdvancedShared.FuelCategoryLabel('electric'),
                 accent = fast.Accent or '#38bdf8',
                 priceMultiplier = tonumber(fast.PriceMultiplier) or 1.0,
                 unitPrice = applyDiscount(fuelUnitPrice(station, true, 'electric_fast'), discount),
@@ -1085,7 +1087,8 @@ lib.callback.register('ps-fuel:server:getRefuelPanel', function(
         if vehicle == 0 or GetEntityType(vehicle) ~= 2 then vehicle = nil end
     end
 
-    local profile = vehicle and configuredVehicleProfile(GetEntityModel(vehicle), vehicleClass) or nil
+    local actualVehicleClass = vehicle and serverVehicleClass(vehicle, vehicleClass) or vehicleClass
+    local profile = vehicle and configuredVehicleProfile(GetEntityModel(vehicle), actualVehicleClass) or nil
     local electricVehicle = profile and profile.fuelType == 'electric' or false
     local charger = electricChargerByStation(stationId, chargerId)
     local fastCharge = electricVehicle and profile.fastCharge == true and chargerSupportsFastCharge(charger)
@@ -1115,10 +1118,10 @@ lib.callback.register('ps-fuel:server:getRefuelPanel', function(
         stock = tonumber(station.stock) or 0,
         capacity = tonumber(station.capacity) or cfg.capacity or 10000,
         marketMultiplier = marketMultiplier,
-        fuelTypes = serialiseFuelTypes(station, player, vehicleClass, electricVehicle, fastCharge),
+        fuelTypes = serialiseFuelTypes(station, player, actualVehicleClass, electricVehicle, fastCharge, vehicle),
         paymentAccount = account,
         paymentAccounts = (PSFuelConfig.Payment or {}).AllowedAccounts or { bank = true },
-        discountPercent = emergencyDiscount(player, vehicleClass),
+        discountPercent = emergencyDiscount(player, actualVehicleClass),
         electric = electricVehicle,
         fastCharge = fastCharge,
         pumpSpeedMultiplier = (1.0 + (tonumber(advRow.pump_level) or 0) * 0.20) * math.max(0.40, (tonumber(advRow.maintenance) or 100) / 100),

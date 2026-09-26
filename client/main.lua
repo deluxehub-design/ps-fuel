@@ -435,20 +435,15 @@ local function fuelTypeAllowed(vehicle, fuelType)
     if not DoesEntityExist(vehicle) then return false end
     fuelType = tostring(fuelType or PSFuelConfig.FuelTypes.Default):lower()
     local profile = configuredVehicleProfile(vehicle)
-    if fuelType == 'electric' then return profile.fuelType == 'electric' end
-    if fuelType == 'electric_fast' then return profile.fuelType == 'electric' and profile.fastCharge == true end
-    if profile.fuelType == 'electric' then return false end
-    local typeConfig = PSFuelConfig.FuelTypes and PSFuelConfig.FuelTypes[fuelType]
-    if not typeConfig then return false end
-    local family = tostring(typeConfig.family or fuelType):lower()
-    if family ~= profile.fuelType then
-        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
-            and PSFuelAdvancedShared.CanCrossContaminate(profile.fuelType, family)
+    if fuelType == 'electric_fast' then
+        return profile.fuelType == 'electric' and profile.fastCharge == true
     end
-    if typeConfig.requiresFlexFuel == true and not PSFuelAdvancedShared.IsFlexFuel(GetEntityModel(vehicle)) then
-        return (((PSFuelConfig.Advanced or {}).FuelQuality or {}).ContaminationEnabled) == true
-    end
-    return true
+    return PSFuelAdvancedShared.VehicleSupportsFuelType(
+        GetEntityModel(vehicle),
+        GetVehicleClass(vehicle),
+        profile.fuelType,
+        fuelType
+    )
 end
 
 local function getVehicleLabel(vehicle)
@@ -484,6 +479,17 @@ local function buildVehicleData(vehicle)
         end
     end
 
+    local categories = PSFuelAdvancedShared.DetectVehicleFuelCategories(
+        GetEntityModel(vehicle),
+        GetVehicleClass(vehicle),
+        profile.fuelType
+    )
+    local categoryList = {}
+    for category in pairs(categories) do
+        categoryList[#categoryList + 1] = category
+    end
+    table.sort(categoryList)
+
     local tank = PSFuelAdvancedShared.GetTankProfile(GetEntityModel(vehicle), GetVehicleClass(vehicle), electric)
     local rawVolume = PSFuelAdvancedShared.PercentToVolume(getFuel(vehicle), tank.capacity)
     local displayVolume, volumeUnit = PSFuelAdvancedShared.FormatVolume(rawVolume)
@@ -506,6 +512,14 @@ local function buildVehicleData(vehicle)
         fuelFamilyLabel = PSFuelAdvancedShared.FuelFamilyLabel(profile.fuelType),
         fastCharge = profile.fastCharge == true,
         fuelProfileSource = profile.source,
+        fuelCategories = categoryList,
+        fuelCategoryLabels = (function()
+            local labels = {}
+            for _, category in ipairs(categoryList) do
+                labels[#labels + 1] = PSFuelAdvancedShared.FuelCategoryLabel(category)
+            end
+            return labels
+        end)(),
         allowedFuelTypes = allowedFuelTypes,
     }
 end
@@ -533,6 +547,13 @@ local function openPanel(mode, stationId)
             local vehicleData = buildVehicleData(vehicle)
             if vehicleData then
                 data.vehicle = vehicleData
+                local allowed = {}
+                for _, fuelType in ipairs(vehicleData.allowedFuelTypes or {}) do allowed[fuelType] = true end
+                local filtered = {}
+                for _, fuel in ipairs(data.fuelTypes or {}) do
+                    if allowed[fuel.id] then filtered[#filtered + 1] = fuel end
+                end
+                data.fuelTypes = filtered
                 activeFuelSession = { vehicle = vehicle, stationId = stationId }
             end
         end
