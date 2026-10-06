@@ -1,6 +1,10 @@
 local resourceName = GetCurrentResourceName()
-local repository = GetConvar('ps_fuel_github_repo', 'deluxehub-evolvenetwork/ps-fuel')
 local installed = GetResourceMetadata(resourceName, 'version', 0) or '0.0.0'
+
+-- Security: the update checker has no configurable URL/host. Keeping the complete
+-- endpoint literal prevents client data, convars, or malformed repository values
+-- from ever becoming an outbound request target.
+local RELEASES_PAGE = 'https://github.com/deluxehub-design/ps-fuel'
 
 local function parts(value)
     value = tostring(value or ''):gsub('^v','')
@@ -16,7 +20,7 @@ local function newer(remote, localVersion)
 end
 
 local function checkVersion(manual)
-    PerformHttpRequest(('https://api.github.com/repos/%s/releases/latest'):format(repository), function(status, body)
+    PerformHttpRequest('https://api.github.com/repos/deluxehub-design/ps-fuel/releases/latest', function(status, body)
         if status ~= 200 or not body then
             if manual then print(('[ps-fuel] Version check unavailable (HTTP %s).'):format(status)) end
             return
@@ -27,7 +31,7 @@ local function checkVersion(manual)
         if latest=='' then return end
         if newer(latest,installed) then
             print(('^3[ps-fuel]^7 Update available: ^2%s^7 -> ^2%s^7'):format(installed,latest))
-            print(('^3[ps-fuel]^7 https://github.com/%s/releases/latest'):format(repository))
+            print(('^3[ps-fuel]^7 %s'):format(RELEASES_PAGE))
         elseif manual then
             print(('^2[ps-fuel]^7 v%s is current.'):format(installed))
         end

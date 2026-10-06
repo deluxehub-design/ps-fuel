@@ -190,8 +190,9 @@ end
 
 local function addPlayerMoney(player, account, amount, reason)
     amount = math.max(0, math.floor(tonumber(amount) or 0))
-    if not player then return false end
-    return PSFuelFramework and PSFuelFramework.AddMoney and PSFuelFramework.AddMoney(player, account, amount, reason) == true
+    if not player or not PSFuelFramework or not PSFuelFramework.CreateCreditVoucher or not PSFuelFramework.RedeemCreditVoucher then return false end
+    local voucher=PSFuelFramework.CreateCreditVoucher(player,account,amount,reason)
+    return voucher ~= nil and PSFuelFramework.RedeemCreditVoucher(player,voucher) == true
 end
 
 local function paymentAccountAllowed(account)
@@ -285,7 +286,10 @@ local function validateNozzleSession(src, stationId, electric, chargerId, token)
     if electric and session.chargerId ~= chargerId then return false, nil end
 
     local cfg = stationConfig(stationId)
-    if not cfg or not isNearFuelSource(src, cfg, electric, chargerId) then
+    if not cfg then return false, nil end
+    -- Fuel hoses require the player to stay at the pump. EV sessions may continue after
+    -- the connector is inserted; purchaseFuel validates charger-to-vehicle cable distance.
+    if not electric and not isNearFuelSource(src, cfg, false, chargerId) then
         return false, nil
     end
 
@@ -477,6 +481,51 @@ local function serialiseVehicleProfiles()
     return result
 end
 
+local function appendRuntimeStation(cfg)
+    if type(cfg) ~= 'table' or type(cfg.id) ~= 'string' or cfg.id == '' or not cfg.coords then return false end
+    for _, existing in ipairs(PSFuelConfig.Stations or {}) do
+        if existing.id == cfg.id then return false end
+    end
+    PSFuelConfig.Stations[#PSFuelConfig.Stations + 1] = cfg
+    return true
+end
+
+local function appendRuntimeCharger(charger)
+    if type(charger) ~= 'table' or type(charger.id) ~= 'string' or charger.id == '' or not charger.coords then return false end
+    PSFuelConfig.Electric = PSFuelConfig.Electric or {}
+    PSFuelConfig.Electric.Chargers = PSFuelConfig.Electric.Chargers or {}
+    for _, existing in ipairs(PSFuelConfig.Electric.Chargers) do
+        if existing.id == charger.id then return false end
+    end
+    PSFuelConfig.Electric.Chargers[#PSFuelConfig.Electric.Chargers + 1] = charger
+    return true
+end
+
+local function loadRuntimeNetwork()
+    local stationRows = MySQL.query.await([[SELECT station_id,label,x,y,z,heading,pump_model,purchase_price,capacity
+        FROM ps_fuel_custom_stations WHERE active=1]]) or {}
+    for _, row in ipairs(stationRows) do
+        appendRuntimeStation({
+            id=tostring(row.station_id), label=tostring(row.label),
+            coords=vec3(tonumber(row.x),tonumber(row.y),tonumber(row.z)),
+            priceMultiplier=1.0, purchasePrice=tonumber(row.purchase_price) or 200000,
+            capacity=tonumber(row.capacity) or 15000.0, ownershipEnabled=true,
+            heading=tonumber(row.heading) or 0.0, pumpModel=tostring(row.pump_model or 'prop_gas_pump_1a'),
+            interactionDistance=34.0, deliveryEnabled=true, custom=true,
+            delivery={ coords=vec3(tonumber(row.x),tonumber(row.y),tonumber(row.z)), heading=tonumber(row.heading) or 0.0, length=26.0, width=9.0, requireDirection=false }
+        })
+    end
+    local chargerRows = MySQL.query.await([[SELECT charger_id,station_id,label,x,y,z,heading,fast_charge
+        FROM ps_fuel_custom_chargers WHERE active=1]]) or {}
+    for _, row in ipairs(chargerRows) do
+        appendRuntimeCharger({
+            id=tostring(row.charger_id), stationId=tostring(row.station_id), label=tostring(row.label),
+            coords=vec4(tonumber(row.x),tonumber(row.y),tonumber(row.z),tonumber(row.heading) or 0.0),
+            fastCharge=tonumber(row.fast_charge)==1, custom=true
+        })
+    end
+end
+
 local function loadStations()
     local rows = MySQL.query.await('SELECT * FROM ps_fuel_stations') or {}
     local byId = {}
@@ -507,12 +556,37 @@ local function loadStations()
         row.stock = math.min(configuredCapacity, tonumber(row.stock) or configuredCapacity)
         row.capacity = configuredCapacity
         row.label = tostring(cfg.label or row.label or cfg.id):sub(1, 100)
-        MySQL.update.await([[UPDATE ps_fuel_stations
-            SET label = ?, capacity = ?, stock = LEAST(stock, ?)
-            WHERE station_id = ?]], { row.label, configuredCapacity, configuredCapacity, cfg.id })
+        local unowned = row.owner_citizenid == nil or row.owner_citizenid == ''
+        if unowned and (PSFuelConfig.Ownership or {}).UnownedStationsAlwaysFull == true then
+            row.stock = configuredCapacity
+            MySQL.update.await([[UPDATE ps_fuel_stations
+                SET label = ?, capacity = ?, stock = ?
+                WHERE station_id = ?]], { row.label, configuredCapacity, configuredCapacity, cfg.id })
+        else
+            MySQL.update.await([[UPDATE ps_fuel_stations
+                SET label = ?, capacity = ?, stock = LEAST(stock, ?)
+                WHERE station_id = ?]], { row.label, configuredCapacity, configuredCapacity, cfg.id })
+        end
         stations[cfg.id] = row
     end
 end
+
+PSFuelServerRuntime = PSFuelServerRuntime or {}
+PSFuelServerRuntime.AddStation = function(cfg)
+    if not appendRuntimeStation(cfg) then return false end
+    local capacity=math.max(1.0,tonumber(cfg.capacity) or 15000.0)
+    MySQL.insert.await([[INSERT IGNORE INTO ps_fuel_stations
+        (station_id,label,owner_citizenid,owner_name,balance,price_multiplier,total_sales,total_litres,stock,capacity)
+        VALUES (?,?,NULL,NULL,0,1.0,0,0,?,?)]], {cfg.id,cfg.label,capacity,capacity})
+    stations[cfg.id] = {
+        station_id=cfg.id,label=cfg.label,owner_citizenid=nil,owner_name=nil,balance=0,
+        price_multiplier=1.0,total_sales=0,total_litres=0,stock=capacity,capacity=capacity
+    }
+    return true
+end
+PSFuelServerRuntime.AddCharger = appendRuntimeCharger
+PSFuelServerRuntime.GetStation = function(id) return stations[id], stationConfig(id) end
+PSFuelServerRuntime.ReloadStations = loadStations
 
 local function validateConfiguration()
     local errors, warnings = {}, {}
@@ -564,6 +638,7 @@ CreateThread(function()
         "SELECT setting_value FROM ps_fuel_settings WHERE setting_key = 'market_multiplier'"
     )) or 1.0
 
+    loadRuntimeNetwork()
     loadVehicleProfiles()
     loadStations()
 end)
@@ -720,6 +795,14 @@ RegisterNetEvent('ps-fuel:server:saveVehicleFuel', function(netId, plate, fuel, 
     leakLevel = math.max(0, math.min(2, tonumber(leakLevel) or 0))
     if not fuel then return end
     fuel = math.max(0, math.min(PSFuelConfig.MaxFuel, fuel))
+    local stored = MySQL.scalar.await('SELECT fuel FROM ps_fuel_vehicles WHERE plate=?',{plate})
+    if stored == nil then
+        local initialCeiling = math.max(0, math.min(PSFuelConfig.MaxFuel, tonumber(PSFuelConfig.StartFuelMax) or 80))
+        fuel = math.min(fuel, initialCeiling)
+    elseif fuel > (tonumber(stored) or 0) + 0.75 then
+        TriggerEvent('ps-fuel:server:suspicious','unauthorised_fuel_increase',{source=src,plate=plate,stored=stored,reported=fuel})
+        return
+    end
     MySQL.prepare.await([[INSERT INTO ps_fuel_vehicles (plate, fuel, leak_level, updated_at)
         VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE
         fuel = VALUES(fuel), leak_level = VALUES(leak_level), updated_at = NOW()]],
@@ -737,7 +820,8 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     local cfg = stationConfig(stationId)
     local station = stations[stationId]
     fuelAmount = tonumber(fuelAmount)
-    physicalAmount = tonumber(physicalAmount) or fuelAmount
+    -- 3.6.0: client-supplied litres/kWh are ignored and recomputed from the server-validated vehicle.
+    physicalAmount = nil
     netId = tonumber(netId)
     fuelType = tostring(fuelType or PSFuelConfig.FuelTypes.Default):lower()
     local electric = isElectricFuelType(fuelType)
@@ -757,16 +841,10 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     end
 
     if not player or not cfg or not station or not selectedFuelType or not selectedFuelConfig
-        or not fuelAmount or fuelAmount <= 0 or fuelAmount > 10 or physicalAmount <= 0
+        or not fuelAmount or fuelAmount <= 0 or fuelAmount > 10
     then
         return { success = false, message = 'Invalid fuel purchase.' }
     end
-    local anti = ((PSFuelConfig.Advanced or {}).AntiCheat or {})
-    if anti.Enabled ~= false and physicalAmount > (tonumber(anti.MaxLitresPerTick) or 20.0) then
-        TriggerEvent('ps-fuel:server:suspicious', 'fuel_tick_volume', { source=src, volume=physicalAmount, station=stationId })
-        return { success=false, message='Fuel transaction rejected.' }
-    end
-
     local validSession, nozzleSession = validateNozzleSession(
         src,
         stationId,
@@ -778,7 +856,7 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
         return { success = false, message = 'The physical nozzle session is no longer authorised.' }
     end
 
-    if not isNearFuelSource(src, cfg, electric, chargerId) then
+    if not (electric and nozzleSession) and not isNearFuelSource(src, cfg, electric, chargerId) then
         return {
             success = false,
             message = electric
@@ -798,6 +876,22 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
         return { success = false, message = 'Vehicle not found.' }
     end
     local actualVehicleClass = serverVehicleClass(vehicle, vehicleClass)
+    if actualVehicleClass == nil then return {success=false,message='Unable to validate this vehicle class.'} end
+    local tankProfile = PSFuelAdvancedShared.GetTankProfile(GetEntityModel(vehicle), actualVehicleClass, electric)
+    physicalAmount = PSFuelAdvancedShared.PercentToVolume(fuelAmount, tonumber(tankProfile.capacity) or 60.0)
+    local anti = ((PSFuelConfig.Advanced or {}).AntiCheat or {})
+    if not physicalAmount or physicalAmount <= 0 or (anti.Enabled ~= false and physicalAmount > (tonumber(anti.MaxLitresPerTick) or 20.0)) then
+        TriggerEvent('ps-fuel:server:suspicious','fuel_tick_volume',{source=src,volume=physicalAmount,station=stationId})
+        return {success=false,message='Fuel transaction rejected.'}
+    end
+    if electric and nozzleSession then
+        local charger=electricChargerByStation(stationId,chargerId)
+        if not charger or not charger.coords then return {success=false,message='The charger is unavailable.'} end
+        local cc=charger.coords
+        if #(GetEntityCoords(vehicle)-vec3(cc.x,cc.y,cc.z)) > math.max(5.0,tonumber((PSFuelConfig.Electric or {}).MaxCableDistance) or 7.5) then
+            return {success=false,message='The vehicle is too far from the charger.'}
+        end
+    end
     if electric and (tonumber(currentFuel) or 0) + fuelAmount >= 99.99 and PSFuelAdvanced and PSFuelAdvanced.MarkChargerFull then PSFuelAdvanced.MarkChargerFull(src, chargerId) end
     if not vehicleFuelTypeAllowed(vehicle, selectedFuelType, actualVehicleClass) then
         return { success = false, message = 'That energy type is not compatible with this vehicle.' }
@@ -810,12 +904,14 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     end
 
     local playerPed = GetPlayerPed(src)
-    if playerPed == 0 or #(GetEntityCoords(playerPed) - GetEntityCoords(vehicle)) > (PSFuelConfig.VehicleDistance + 3.0) then
+    if playerPed == 0 or (not (electric and nozzleSession) and #(GetEntityCoords(playerPed) - GetEntityCoords(vehicle)) > (PSFuelConfig.VehicleDistance + 3.0)) then
         return { success = false, message = 'The vehicle is too far away from the pump or charger.' }
     end
 
     local stock = tonumber(station.stock) or 0
-    if not electric and stock < physicalAmount then
+    local unownedUnlimited = (station.owner_citizenid == nil or station.owner_citizenid == '')
+        and (PSFuelConfig.Ownership or {}).UnownedStationsAlwaysFull == true
+    if not electric and not unownedUnlimited and stock < physicalAmount then
         return { success = false, message = 'This station is out of fuel.' }
     end
 
@@ -857,6 +953,9 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
         and math.floor(price * (PSFuelConfig.OwnerSharePercent / 100))
         or 0
     local stockRemoval = electric and 0 or physicalAmount
+    if not hasOwner and (PSFuelConfig.Ownership or {}).UnownedStationsAlwaysFull == true then
+        stockRemoval = 0
+    end
 
     local affected
     if electric then
@@ -899,13 +998,27 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
     station.balance = (tonumber(station.balance) or 0) + ownerCut
     station.total_sales = (tonumber(station.total_sales) or 0) + price
     station.total_litres = (tonumber(station.total_litres) or 0) + physicalAmount
-    if not electric then
-        station.stock = math.max(0, (tonumber(station.stock) or 0) - physicalAmount)
+    if not electric and stockRemoval > 0 then
+        station.stock = math.max(0, (tonumber(station.stock) or 0) - stockRemoval)
+    elseif not electric and not hasOwner and (PSFuelConfig.Ownership or {}).UnownedStationsAlwaysFull == true then
+        station.stock = tonumber(station.capacity) or tonumber(cfg.capacity) or 10000
     end
 
     if postPay and PSFuelAdvanced and PSFuelAdvanced.RecordPostPay then PSFuelAdvanced.RecordPostPay(src,{stationId=stationId,price=price,ownerCut=ownerCut,volume=physicalAmount,account=nozzleSession and nozzleSession.paymentAccount or paymentAccount,fuelType=selectedFuelType}) end
 
     local resolvedPlate = normalisePlate(plate or GetVehicleNumberPlateText(vehicle))
+    local authoritativeFuel
+    if resolvedPlate and resolvedPlate ~= '' then
+        local storedFuel = MySQL.scalar.await('SELECT fuel FROM ps_fuel_vehicles WHERE plate=?',{resolvedPlate})
+        if storedFuel == nil then
+            local stateFuel = tonumber(Entity(vehicle).state.fuel) or tonumber(Entity(vehicle).state.recoilFuel) or 0
+            local initialCeiling = math.max(0, math.min(PSFuelConfig.MaxFuel, tonumber(PSFuelConfig.StartFuelMax) or 80))
+            storedFuel = math.max(0, math.min(initialCeiling, stateFuel))
+            MySQL.insert.await('INSERT IGNORE INTO ps_fuel_vehicles (plate,fuel,leak_level) VALUES (?,?,0)',{resolvedPlate,storedFuel})
+        end
+        authoritativeFuel = math.max(0, math.min(PSFuelConfig.MaxFuel,(tonumber(storedFuel) or 0)+fuelAmount))
+        MySQL.update.await('UPDATE ps_fuel_vehicles SET fuel=?,updated_at=NOW() WHERE plate=?',{authoritativeFuel,resolvedPlate})
+    end
     if PSFuelAdvanced and PSFuelAdvanced.RecordPurchase then
         PSFuelAdvanced.RecordPurchase({ source=src, stationId=stationId, plate=resolvedPlate, model=tonumber(modelHash) or GetEntityModel(vehicle), class=actualVehicleClass, fuelType=selectedFuelType, volume=physicalAmount, percent=fuelAmount, price=price, playerName=playerName, currentFuel=tonumber(currentFuel) or 0, baseFuelType=configuredVehicleProfile(GetEntityModel(vehicle), actualVehicleClass).fuelType })
     end
@@ -920,6 +1033,7 @@ lib.callback.register('ps-fuel:server:purchaseFuel', function(
         unitPrice = unitPrice,
         discountPercent = discount,
         paymentAccount = account,
+        authoritativeFuel = authoritativeFuel,
     }
 end)
 
@@ -937,7 +1051,9 @@ lib.callback.register('ps-fuel:server:buyJerryCan', function(src, stationId, pay
     end
 
     local fuelAmount = math.max(0, tonumber(canConfig.FuelAmount) or 0)
-    if (tonumber(station.stock) or 0) < fuelAmount then
+    local unownedUnlimited = (station.owner_citizenid == nil or station.owner_citizenid == '')
+        and (PSFuelConfig.Ownership or {}).UnownedStationsAlwaysFull == true
+    if not unownedUnlimited and (tonumber(station.stock) or 0) < fuelAmount then
         return { success = false, message = 'This station does not have enough fuel to fill a can.' }
     end
 
@@ -958,12 +1074,20 @@ lib.callback.register('ps-fuel:server:buyJerryCan', function(src, stationId, pay
         and math.floor(price * (PSFuelConfig.OwnerSharePercent / 100))
         or 0
 
-    local affected = MySQL.update.await([[UPDATE ps_fuel_stations
-        SET balance = balance + ?, total_sales = total_sales + ?, total_litres = total_litres + ?,
-            stock = stock - ?
-        WHERE station_id = ? AND stock >= ?]], {
-            ownerCut, price, fuelAmount, fuelAmount, stationId, fuelAmount
-        })
+    local stockRemoval = (hasOwner or (PSFuelConfig.Ownership or {}).UnownedStationsAlwaysFull ~= true) and fuelAmount or 0
+    local affected
+    if stockRemoval > 0 then
+        affected = MySQL.update.await([[UPDATE ps_fuel_stations
+            SET balance = balance + ?, total_sales = total_sales + ?, total_litres = total_litres + ?,
+                stock = stock - ?
+            WHERE station_id = ? AND stock >= ?]], {
+                ownerCut, price, fuelAmount, stockRemoval, stationId, stockRemoval
+            })
+    else
+        affected = MySQL.update.await([[UPDATE ps_fuel_stations
+            SET balance = balance + ?, total_sales = total_sales + ?, total_litres = total_litres + ?, stock = capacity
+            WHERE station_id = ?]], {ownerCut, price, fuelAmount, stationId})
+    end
     if not affected or affected < 1 then
         if price > 0 then addPlayerMoney(player, account, price, 'ps-fuel-jerrycan-refund') end
         return { success = false, message = 'This station ran out of fuel.' }
@@ -980,14 +1104,18 @@ lib.callback.register('ps-fuel:server:buyJerryCan', function(src, stationId, pay
         MySQL.update.await([[UPDATE ps_fuel_stations
             SET balance = GREATEST(0, balance - ?), total_sales = GREATEST(0, total_sales - ?),
                 total_litres = GREATEST(0, total_litres - ?), stock = LEAST(capacity, stock + ?)
-            WHERE station_id = ?]], { ownerCut, price, fuelAmount, fuelAmount, stationId })
+            WHERE station_id = ?]], { ownerCut, price, fuelAmount, stockRemoval, stationId })
         return { success = false, message = 'You cannot carry the emergency fuel can.' }
     end
 
     station.balance = (tonumber(station.balance) or 0) + ownerCut
     station.total_sales = (tonumber(station.total_sales) or 0) + price
     station.total_litres = (tonumber(station.total_litres) or 0) + fuelAmount
-    station.stock = math.max(0, (tonumber(station.stock) or 0) - fuelAmount)
+    if stockRemoval > 0 then
+        station.stock = math.max(0, (tonumber(station.stock) or 0) - stockRemoval)
+    else
+        station.stock = tonumber(station.capacity) or tonumber(cfg.capacity) or 10000
+    end
 
     local charinfo = player.PlayerData.charinfo or {}
     local playerName = (((charinfo.firstname or '') .. ' ' .. (charinfo.lastname or '')):gsub('^%s*(.-)%s*$', '%1'))
@@ -1149,11 +1277,21 @@ lib.callback.register('ps-fuel:server:buyStation', function(src, stationId)
     local charinfo = player.PlayerData.charinfo or {}
     local ownerName = (((charinfo.firstname or '') .. ' ' .. (charinfo.lastname or '')):gsub('^%s*(.-)%s*$', '%1'))
     if ownerName == '' then ownerName = player.PlayerData.name or getCitizenId(player) end
-    local affected = MySQL.update.await([[UPDATE ps_fuel_stations
-        SET owner_citizenid = ?, owner_name = ?
-        WHERE station_id = ? AND owner_citizenid IS NULL]], {
-        getCitizenId(player), ownerName, stationId
-    })
+    local resetStock = (PSFuelConfig.Ownership or {}).PurchaseResetsStock == true
+    local affected
+    if resetStock then
+        affected = MySQL.update.await([[UPDATE ps_fuel_stations
+            SET owner_citizenid = ?, owner_name = ?, stock = 0
+            WHERE station_id = ? AND owner_citizenid IS NULL]], {
+            getCitizenId(player), ownerName, stationId
+        })
+    else
+        affected = MySQL.update.await([[UPDATE ps_fuel_stations
+            SET owner_citizenid = ?, owner_name = ?
+            WHERE station_id = ? AND owner_citizenid IS NULL]], {
+            getCitizenId(player), ownerName, stationId
+        })
+    end
 
     if not affected or affected < 1 then
         addPlayerMoney(player, purchaseAccount, price, 'ps-fuel-station-purchase-refund')
@@ -1162,8 +1300,9 @@ lib.callback.register('ps-fuel:server:buyStation', function(src, stationId)
     end
 
     station.owner_citizenid, station.owner_name = getCitizenId(player), ownerName
-    audit('station_purchased', src, player, { stationId=stationId, price=price })
-    return { success = true, message = 'Fuel station purchased.' }
+    if resetStock then station.stock = 0 end
+    audit('station_purchased', src, player, { stationId=stationId, price=price, stockReset=resetStock })
+    return { success = true, message = (PSFuelConfig.Ownership.PurchaseResetsStock == true) and 'Fuel station purchased. Stock is now empty; order a supplier delivery to begin selling fuel.' or 'Fuel station purchased.' }
 end)
 
 lib.callback.register('ps-fuel:server:withdrawStation', function(src, stationId)
@@ -1178,12 +1317,14 @@ lib.callback.register('ps-fuel:server:withdrawStation', function(src, stationId)
     end
 
     local row = MySQL.single.await('SELECT balance FROM ps_fuel_stations WHERE station_id = ?', { stationId })
-    local amount = math.floor(tonumber(row and row.balance) or 0)
+    local balance = math.floor(tonumber(row and row.balance) or 0)
+    local withdrawalLimit = math.max(1, math.floor(tonumber((PSFuelConfig.Security or {}).MaxStationWithdrawal) or 250000))
+    local amount = math.min(balance, withdrawalLimit)
     if amount <= 0 then return { success = false, message = 'There are no funds to withdraw.' } end
 
     local affected = MySQL.update.await(
-        'UPDATE ps_fuel_stations SET balance = 0 WHERE station_id = ? AND balance = ?',
-        { stationId, amount }
+        'UPDATE ps_fuel_stations SET balance = balance - ? WHERE station_id = ? AND balance >= ?',
+        { amount, stationId, amount }
     )
     if not affected or affected < 1 then
         loadStations()
@@ -1193,11 +1334,11 @@ lib.callback.register('ps-fuel:server:withdrawStation', function(src, stationId)
     local paid = addPlayerMoney(player, 'bank', amount, 'ps-fuel-station-withdrawal')
     if paid == false then
         MySQL.update.await('UPDATE ps_fuel_stations SET balance = balance + ? WHERE station_id = ?', { amount, stationId })
-        station.balance = amount
+        station.balance = balance
         return { success = false, message = 'The bank deposit failed and the station balance was restored.' }
     end
 
-    station.balance = 0
+    station.balance = math.max(0, balance - amount)
     audit('station_withdrawal', src, player, { stationId = stationId, amount = amount })
     return { success = true, amount = amount }
 end)
@@ -1264,17 +1405,9 @@ end)
 do
     local canConfig = PSFuelConfig.JerryCan or {}
     if canConfig.Enabled == true and type(canConfig.Item) == 'string' and canConfig.Item ~= '' then
-        local ok, err = pcall(function()
-            local registered = PSFuelFramework.RegisterUsableItem(canConfig.Item, function(src)
-                TriggerClientEvent('ps-fuel:client:useJerryCan', src)
-            end)
-            if not registered then
-                error(('no usable-item adapter for framework %s'):format(PSFuelFramework.GetName()))
-            end
-        end)
-        if not ok then
-            print(('[ps-fuel] Failed to register usable item %s: %s'):format(canConfig.Item, tostring(err)))
-        end
+        PSFuelFramework.RegisterUsableItemDeferred(canConfig.Item, function(src)
+            TriggerClientEvent('ps-fuel:client:useJerryCan', src)
+        end, 20000)
     end
 end
 
@@ -1487,11 +1620,26 @@ lib.callback.register('ps-fuel:server:startDelivery', function(src, stationId)
         }
     end
 
+    local security = PSFuelConfig.Security or {}
+    local rewardCeiling = math.max(1, math.floor(tonumber(security.MaxDeliveryReward) or 50000))
+    local rewardMin = math.min(rewardCeiling, math.max(0, math.floor(tonumber(PSFuelConfig.Deliveries.RewardMin) or 2500)))
+    local rewardMax = math.min(rewardCeiling, math.max(0, math.floor(tonumber(PSFuelConfig.Deliveries.RewardMax) or 4500)))
+    if rewardMax < rewardMin then rewardMin, rewardMax = rewardMax, rewardMin end
+    local reward = math.random(rewardMin, rewardMax)
+    local rewardClaim = PSFuelSecurity.Token(src, 'delivery-reward')
+    local inserted = MySQL.update.await([[INSERT IGNORE INTO ps_fuel_reward_claims
+        (claim_key,citizenid,reward_type,amount,status) VALUES (?,?,'delivery',?,'reserved')]],
+        {rewardClaim,citizenid,reward})
+    if not inserted or tonumber(inserted) == 0 then
+        return {success=false,message='Unable to reserve the secure delivery reward.'}
+    end
+
     activeDeliveries[src] = {
         stationId = stationId,
         stage = 'collect_vehicle',
         tankerLoaded = false,
-        startedAt = os.time()
+        startedAt = os.time(),
+        rewardClaim = rewardClaim
     }
 
     return {
@@ -1682,16 +1830,28 @@ lib.callback.register('ps-fuel:server:markTankerLoaded', function(src, stationId
 end)
 
 lib.callback.register('ps-fuel:server:completeDelivery', function(src, stationId)
+    local security = PSFuelConfig.Security or {}
+    if rateLimited(
+        src,
+        'completeDelivery',
+        security.DeliveryCompleteWindowMs or 2500,
+        security.DeliveryCompleteBurst or 1
+    ) then
+        return { success = false, message = 'Please wait before completing the delivery again.' }
+    end
+
     local player, cfg, station = getPlayer(src), stationConfig(stationId), stations[stationId]
     local delivery = activeDeliveries[src]
     if not player or not cfg or not station or not delivery or delivery.stationId ~= stationId then
         return { success = false, message = 'No active delivery found.' }
     end
 
-    if not delivery.tankerLoaded or delivery.stage ~= 'return_to_station' then
+    if delivery.completing == true or not delivery.tankerLoaded or delivery.stage ~= 'return_to_station' then
         return {
             success = false,
-            message = 'The tanker must be filled at the loading terminal first.'
+            message = delivery.completing == true
+                and 'This delivery is already being completed.'
+                or 'The tanker must be filled at the loading terminal first.'
         }
     end
     local ped = GetPlayerPed(src)
@@ -1703,26 +1863,51 @@ lib.callback.register('ps-fuel:server:completeDelivery', function(src, stationId
     end
 
     local truck, trailer = deliveryEntities(delivery)
-    local maxVehicleDistance = math.max(10.0, tonumber((PSFuelConfig.Security or {}).DeliveryVehicleDistance) or 25.0)
+    local maxVehicleDistance = math.max(10.0, tonumber(security.DeliveryVehicleDistance) or 25.0)
     if truck == 0 or trailer == 0
         or #(GetEntityCoords(truck) - cfg.coords) > maxVehicleDistance
         or #(GetEntityCoords(trailer) - cfg.coords) > maxVehicleDistance
     then
         return { success = false, message = 'Bring the assigned truck and loaded tanker into the station delivery area.' }
     end
-    if (PSFuelConfig.Security or {}).RequireDeliveryDriverSeat ~= false
+    if security.RequireDeliveryDriverSeat ~= false
         and GetPedInVehicleSeat(truck, -1) ~= ped
     then
         return { success = false, message = 'You must be driving the assigned delivery truck.' }
     end
 
     local citizenid = getCitizenId(player)
-
     if not citizenid then
         return {
             success = false,
-            message = 'Your Qbox character identifier could not be found.'
+            message = 'Your character identifier could not be found.'
         }
+    end
+
+    -- Lock before the first database await. This makes the payout path idempotent even if
+    -- a cheat menu or a lag spike replays the callback while the first request is yielding.
+    delivery.completing = true
+    delivery.stage = 'completing'
+
+    local function unlockDelivery()
+        if activeDeliveries[src] == delivery then
+            delivery.completing = false
+            delivery.stage = 'return_to_station'
+        end
+    end
+
+    local claimKey = tostring(delivery.rewardClaim or '')
+    if claimKey == '' then
+        unlockDelivery()
+        return { success = false, message = 'This delivery has no valid server reward claim.' }
+    end
+
+    local claim = MySQL.single.await([[SELECT amount,status,citizenid FROM ps_fuel_reward_claims
+        WHERE claim_key=? AND reward_type='delivery' LIMIT 1]], {claimKey})
+    if not claim or claim.status ~= 'reserved' or tostring(claim.citizenid or '') ~= tostring(citizenid) then
+        activeDeliveries[src] = nil
+        audit('delivery_reward_replay_blocked', src, player, { stationId=stationId, claimKey=claimKey })
+        return {success=false,message='This delivery reward is invalid or has already been used.'}
     end
 
     local capacity = tonumber(station.capacity) or tonumber(cfg.capacity) or 10000
@@ -1736,29 +1921,35 @@ lib.callback.register('ps-fuel:server:completeDelivery', function(src, stationId
     local amount = math.min(deliveryAmount, math.max(0, capacity - stock))
 
     if amount <= 0 then
+        MySQL.update.await("UPDATE ps_fuel_reward_claims SET status='cancelled' WHERE claim_key=?", {claimKey})
+        unlockDelivery()
         return {
             success = false,
             message = 'This fuel station is already at full capacity. Use some fuel or lower automatic restocking first.'
         }
     end
 
-    local rewardMin = math.max(0, math.floor(tonumber(PSFuelConfig.Deliveries.RewardMin) or 2500))
-    local rewardMax = math.max(0, math.floor(tonumber(PSFuelConfig.Deliveries.RewardMax) or 4500))
-
-    if rewardMax < rewardMin then
-        rewardMin, rewardMax = rewardMax, rewardMin
+    local reward = math.max(0, math.floor(tonumber(claim.amount) or 0))
+    local rewardCeiling = math.max(1, math.floor(tonumber(security.MaxDeliveryReward) or 50000))
+    if reward <= 0 or reward > rewardCeiling then
+        activeDeliveries[src] = nil
+        audit('delivery_reward_invalid',src,player,{stationId=stationId,claimKey=claimKey,reward=reward})
+        return {success=false,message='The reserved delivery reward failed validation.'}
     end
-
-    local reward = math.random(rewardMin, rewardMax)
+    local locked = MySQL.update.await([[UPDATE ps_fuel_reward_claims SET status='paying'
+        WHERE claim_key=? AND status='reserved' AND citizenid=?]], {claimKey,citizenid})
+    if not locked or locked < 1 then
+        activeDeliveries[src] = nil
+        return {success=false,message='This delivery reward is already being processed.'}
+    end
 
     local paid = addPlayerMoney(player, 'bank', reward, 'ps-fuel-delivery')
-
-    if paid == false then
-        return {
-            success = false,
-            message = 'The Qbox bank payment failed.'
-        }
+    if not paid then
+        MySQL.update.await("UPDATE ps_fuel_reward_claims SET status='reserved' WHERE claim_key=? AND status='paying'", {claimKey})
+        unlockDelivery()
+        return { success = false, message = 'The bank payment failed.' }
     end
+
     local newStock = math.min(capacity, stock + amount)
     local affected = MySQL.update.await(
         'UPDATE ps_fuel_stations SET stock = ? WHERE station_id = ?',
@@ -1766,8 +1957,9 @@ lib.callback.register('ps-fuel:server:completeDelivery', function(src, stationId
     )
 
     if not affected or affected < 1 then
-        -- Refund the job payout if database persistence failed.
         removePlayerMoney(player, 'bank', reward, 'ps-fuel-delivery-refund-reversal')
+        MySQL.update.await("UPDATE ps_fuel_reward_claims SET status='cancelled' WHERE claim_key=?", {claimKey})
+        unlockDelivery()
         return {
             success = false,
             message = 'The station stock could not be saved to the database.'
@@ -1779,6 +1971,11 @@ lib.callback.register('ps-fuel:server:completeDelivery', function(src, stationId
         (station_id, citizenid, player_name, amount_paid, fuel_amount, transaction_type)
         VALUES (?, ?, ?, ?, ?, 'delivery')]],
         { stationId, citizenid, premiumPlayerName(player), -reward, amount })
+
+    MySQL.update.await(
+        "UPDATE ps_fuel_reward_claims SET status = 'paid', paid_at = NOW() WHERE claim_key = ? AND status = 'paying'",
+        { claimKey }
+    )
 
     deliveryCooldowns[citizenid] = os.time() + ((tonumber(PSFuelConfig.Deliveries.CooldownMinutes) or 15) * 60)
     if PSFuelConfig.Deliveries.DeleteVehiclesOnComplete == true then deleteDeliveryEntities(delivery) end
@@ -1855,8 +2052,9 @@ lib.callback.register('ps-fuel:server:completeRobbery', function(src, stationId,
 
     local row = MySQL.single.await('SELECT balance FROM ps_fuel_stations WHERE station_id = ?', { stationId })
     local balance = math.floor(tonumber(row and row.balance) or 0)
-    local minimumReward = math.max(0, math.floor(tonumber((PSFuelConfig.Robberies or {}).MinReward) or 4000))
-    local maximumReward = math.max(0, math.floor(tonumber((PSFuelConfig.Robberies or {}).MaxReward) or 12000))
+    local robberyRewardCeiling = math.max(1, math.floor(tonumber((PSFuelConfig.Security or {}).MaxRobberyReward) or 100000))
+    local minimumReward = math.min(robberyRewardCeiling, math.max(0, math.floor(tonumber((PSFuelConfig.Robberies or {}).MinReward) or 4000)))
+    local maximumReward = math.min(robberyRewardCeiling, math.max(0, math.floor(tonumber((PSFuelConfig.Robberies or {}).MaxReward) or 12000)))
     if maximumReward < minimumReward then minimumReward, maximumReward = maximumReward, minimumReward end
     local maximumPercent = math.max(0, math.min(100, tonumber((PSFuelConfig.Robberies or {}).MaxStationBalancePercent) or 35))
     local securityLevel=0
@@ -1910,8 +2108,9 @@ CreateThread(function()
         Wait(interval)
         local transactionDays = math.max(1, math.floor(tonumber(cfg.TransactionRetentionDays) or 120))
         local auditDays = math.max(1, math.floor(tonumber(cfg.AuditRetentionDays) or 180))
-        MySQL.update.await(('DELETE FROM ps_fuel_transactions WHERE created_at < NOW() - INTERVAL %d DAY'):format(transactionDays))
-        MySQL.update.await(('DELETE FROM ps_fuel_audit_logs WHERE created_at < NOW() - INTERVAL %d DAY'):format(auditDays))
+        MySQL.update.await('DELETE FROM ps_fuel_transactions WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', { transactionDays })
+        MySQL.update.await('DELETE FROM ps_fuel_audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', { auditDays })
+        MySQL.update.await("DELETE FROM ps_fuel_reward_claims WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)", { math.max(transactionDays, 30) })
     end
 end)
 

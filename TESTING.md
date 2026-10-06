@@ -1,4 +1,4 @@
-# PS Fuel 3.5.2 staging checklist
+# PS Fuel 3.6.0 staging checklist
 
 Run this on a staging server before production.
 

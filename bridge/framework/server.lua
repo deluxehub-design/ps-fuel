@@ -146,18 +146,35 @@ local function standalonePlayer(src)
 end
 
 function PSFuelFramework.Detect()
-    if frameworkName then return frameworkName end
-    frameworkName = detectFramework()
+    -- A runtime custom adapter intentionally overrides auto-detection.
+    if frameworkName == 'custom' and customAdapter then return 'custom' end
 
-    if frameworkName == 'qbox' and not resourceStarted('qbx_core') then
-        frameworkName = 'standalone'
-    elseif frameworkName == 'qbcore' and not resourceStarted('qb-core') then
-        frameworkName = 'standalone'
-    elseif frameworkName == 'esx' and not resourceStarted('es_extended') then
-        frameworkName = 'standalone'
+    local configured = configuredFramework()
+    local detected
+
+    -- Auto mode is deliberately re-evaluated. On some txAdmin/Qbox start orders
+    -- ps-fuel can initialise a fraction of a second before qbx_core reaches
+    -- `started`. The old code cached `standalone` forever in that situation.
+    if configured == 'auto' then
+        detected = detectFramework()
+    else
+        detected = configured
     end
 
-    print(('[ps-fuel] Framework adapter: %s'):format(frameworkName))
+    -- Explicit framework selections fail closed instead of silently switching
+    -- the economy to the standalone wallet while the selected core is starting.
+    if detected == 'qbox' and configured == 'auto' and not resourceStarted('qbx_core') then
+        detected = 'standalone'
+    elseif detected == 'qbcore' and configured == 'auto' and not resourceStarted('qb-core') then
+        detected = 'standalone'
+    elseif detected == 'esx' and configured == 'auto' and not resourceStarted('es_extended') then
+        detected = 'standalone'
+    end
+
+    if frameworkName ~= detected then
+        frameworkName = detected
+        print(('[ps-fuel] Framework adapter: %s'):format(frameworkName))
+    end
     return frameworkName
 end
 
@@ -280,7 +297,23 @@ function PSFuelFramework.RemoveMoney(player, account, amount, reason)
     return false
 end
 
-function PSFuelFramework.AddMoney(player, account, amount, reason)
+local function authorisedCreditLimit(reason)
+    local security = PSFuelConfig.Security or {}
+    local limits = {
+        ['ps-fuel-purchase-refund'] = tonumber(security.MaxRefundCredit) or 10000000,
+        ['ps-fuel-jerrycan-refund'] = tonumber(security.MaxRefundCredit) or 10000000,
+        ['ps-fuel-station-purchase-refund'] = tonumber(security.MaxRefundCredit) or 10000000,
+        ['ps-fuel-loyalty-card-refund'] = tonumber(security.MaxRefundCredit) or 10000000,
+        ['ps-fuel-station-withdrawal'] = tonumber(security.MaxStationWithdrawal) or 250000,
+        ['ps-fuel-delivery'] = tonumber(security.MaxDeliveryReward) or 50000,
+        ['ps-fuel-robbery'] = tonumber(security.MaxRobberyReward) or 100000,
+    }
+    return limits[tostring(reason or '')]
+end
+
+local pendingCredits = {}
+
+local function applyAuthorisedCredit(player, account, amount, reason)
     if not player then return false end
     account = tostring(account or 'bank'):lower()
     amount = math.max(0, math.floor(tonumber(amount) or 0))
@@ -307,6 +340,42 @@ function PSFuelFramework.AddMoney(player, account, amount, reason)
     elseif kind == 'standalone' then
         return PSFuelDatabase and PSFuelDatabase.AddWalletMoney and PSFuelDatabase.AddWalletMoney(PSFuelFramework.GetIdentifier(player), account, amount) == true
     end
+    return false
+end
+
+-- 3.6.0 credit vouchers: no callback/event can directly invoke a framework credit sink.
+-- A server module must first create a short-lived voucher bound to a character/reason,
+-- then redeem that exact voucher. Vouchers are consumed before the framework payout.
+function PSFuelFramework.CreateCreditVoucher(player, account, amount, reason)
+    if not player then return nil end
+    account = tostring(account or 'bank'):lower()
+    amount = math.max(0, math.floor(tonumber(amount) or 0))
+    if amount <= 0 then return 'zero' end
+    local limit = authorisedCreditLimit(reason)
+    if not limit or amount > math.max(0, math.floor(limit)) then
+        print(('[ps-fuel] Blocked unauthorised credit voucher. reason=%s amount=%s'):format(tostring(reason),tostring(amount)))
+        return nil
+    end
+    local identifier = PSFuelFramework.GetIdentifier(player)
+    if not identifier then return nil end
+    local key = ('%s:%s:%s:%s'):format(identifier,GetGameTimer(),math.random(100000,999999),tostring(reason or 'credit'))
+    pendingCredits[key] = {identifier=identifier,account=account,amount=amount,reason=tostring(reason),expires=GetGameTimer()+10000}
+    return key
+end
+
+function PSFuelFramework.RedeemCreditVoucher(player, voucher)
+    if voucher == 'zero' then return true end
+    local credit = pendingCredits[tostring(voucher or '')]
+    if not credit then return false end
+    pendingCredits[tostring(voucher)] = nil
+    if credit.expires < GetGameTimer() then return false end
+    if tostring(PSFuelFramework.GetIdentifier(player) or '') ~= tostring(credit.identifier) then return false end
+    return applyAuthorisedCredit(player, credit.account, credit.amount, credit.reason)
+end
+
+-- Legacy direct credit entry point is intentionally disabled in 3.6.0.
+function PSFuelFramework.AddMoney()
+    print('[ps-fuel] Blocked legacy direct AddMoney call. Use a server credit voucher.')
     return false
 end
 
@@ -378,6 +447,32 @@ function PSFuelFramework.RegisterUsableItem(item, handler)
         return customAdapter.RegisterUsableItem(item, handler) ~= false
     end
     return false
+end
+
+-- Registers inventory items after the selected framework has actually become
+-- available. This avoids false standalone warnings during Qbox/QBCore/ESX
+-- startup and allows `restart ps-fuel` without requiring a second restart.
+function PSFuelFramework.RegisterUsableItemDeferred(item, handler, timeoutMs)
+    if type(item) ~= 'string' or item == '' or type(handler) ~= 'function' then return false end
+    timeoutMs = math.max(1000, math.floor(tonumber(timeoutMs) or 20000))
+
+    CreateThread(function()
+        local deadline = GetGameTimer() + timeoutMs
+        repeat
+            if PSFuelFramework.RegisterUsableItem(item, handler) then
+                return
+            end
+            Wait(1000)
+        until GetGameTimer() >= deadline
+
+        local kind = PSFuelFramework.GetName()
+        -- Standalone/vMenu has no framework usable-item registry. That is normal;
+        -- inventory-backed features simply remain unavailable unless an adapter exists.
+        if kind ~= 'standalone' then
+            print(('[ps-fuel] Unable to register usable item %s with %s after %sms.'):format(item, kind, timeoutMs))
+        end
+    end)
+    return true
 end
 
 function PSFuelFramework.IsStandalone()

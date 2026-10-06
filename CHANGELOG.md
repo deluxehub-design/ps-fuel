@@ -1,3 +1,32 @@
+# Changelog
+
+## 3.6.0
+
+- Fixed custom-station database startup regression caused by stale `ensureColumn` calls.
+- Made framework auto-detection self-healing during start order and deferred usable-item registration for Qbox/QBCore/ESX.
+- Added secure vehicle fuel siphoning/draining and wrong-fuel cleanup.
+- Made configured GTA fuel stations ownable by default.
+- Unowned stations remain supplied; buying a station resets stock to zero.
+- Added gradual GTA AI tanker supplier deliveries with randomized drivers/vehicles; empty newly-owned stations can fund orders from owner bank when needed.
+- Added persistent admin-created stations with spawned GTA pumps and home/business EV chargers.
+- Reworked physical nozzle flow so the nozzle remains inserted until removed with third-eye and returned to the pump.
+- EV charging now allows walking away after the connector is inserted.
+- Hardened delivery rewards with pre-reserved one-time server/database claims.
+- Added server-side validation/rate limiting for all 3.6.0 callbacks.
+
+## 3.5.3
+
+- Hardened delivery payouts with a one-time database-backed reward claim and a server-side reward ceiling.
+- Made both outbound HTTP callsites scanner-safe: GitHub uses a literal fixed endpoint and Discord only appends a validated webhook path to a literal Discord origin.
+
+
+- Fixed a delivery-completion replay/race condition that could pay the same delivery more than once.
+- Removed runtime-built SQL identifiers from wallet, migration, station-upgrade and fuel-system repair paths.
+- Parameterized database-retention intervals instead of formatting them into SQL strings.
+- Restricted outbound Discord requests to official Discord webhook URLs and restricted update checks to the fixed GitHub API origin with a validated repository path.
+- Added rate limiting and payload bounds for client-reported suspicious activity.
+- Updated FuelOS and resource version metadata to 3.5.3.
+
 ## 3.5.2
 
 - Added automatic vehicle fuel-category detection for road petrol, flex fuel, road diesel, piston aviation, jet/turbine, racing/drag and electric vehicles.

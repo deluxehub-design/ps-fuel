@@ -231,3 +231,65 @@ CREATE TABLE IF NOT EXISTS `ps_fuel_fleet_card_transactions` (
         `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
         PRIMARY KEY (`id`), KEY `idx_psfuel_fleet_tx_card` (`card_id`,`created_at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- v3.5.3 security: one-time reward claims prevent replayed payout callbacks.
+CREATE TABLE IF NOT EXISTS `ps_fuel_reward_claims` (
+  `claim_key` varchar(128) NOT NULL,
+  `citizenid` varchar(64) DEFAULT NULL,
+  `reward_type` varchar(32) NOT NULL,
+  `amount` int NOT NULL DEFAULT 0,
+  `status` varchar(16) NOT NULL DEFAULT 'reserved',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `paid_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`claim_key`),
+  KEY `idx_ps_fuel_reward_citizen` (`citizenid`,`created_at`),
+  KEY `idx_ps_fuel_reward_status` (`status`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v3.6.0 runtime station/charger builder and GTA AI delivery state.
+CREATE TABLE IF NOT EXISTS `ps_fuel_custom_stations` (
+  `station_id` varchar(64) NOT NULL,
+  `label` varchar(100) NOT NULL,
+  `x` decimal(12,4) NOT NULL,
+  `y` decimal(12,4) NOT NULL,
+  `z` decimal(12,4) NOT NULL,
+  `heading` decimal(8,3) NOT NULL DEFAULT 0.000,
+  `pump_model` varchar(80) NOT NULL DEFAULT 'prop_gas_pump_1a',
+  `purchase_price` int NOT NULL DEFAULT 200000,
+  `capacity` decimal(12,2) NOT NULL DEFAULT 15000.00,
+  `created_by` varchar(64) DEFAULT NULL,
+  `active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`station_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ps_fuel_custom_chargers` (
+  `charger_id` varchar(64) NOT NULL,
+  `station_id` varchar(64) NOT NULL,
+  `label` varchar(100) NOT NULL,
+  `x` decimal(12,4) NOT NULL,
+  `y` decimal(12,4) NOT NULL,
+  `z` decimal(12,4) NOT NULL,
+  `heading` decimal(8,3) NOT NULL DEFAULT 0.000,
+  `fast_charge` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` varchar(64) DEFAULT NULL,
+  `active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`charger_id`),
+  KEY `idx_ps_fuel_custom_charger_station` (`station_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ps_fuel_npc_deliveries` (
+  `delivery_id` varchar(96) NOT NULL,
+  `station_id` varchar(64) NOT NULL,
+  `owner_identifier` varchar(64) DEFAULT NULL,
+  `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `delivered` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `cost` int NOT NULL DEFAULT 0,
+  `status` varchar(24) NOT NULL DEFAULT 'ordered',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `completed_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`delivery_id`),
+  KEY `idx_ps_fuel_npc_delivery_station` (`station_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

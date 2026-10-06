@@ -216,7 +216,7 @@
     const employees = Array.isArray(adv.employees) ? adv.employees : [];
     const breakdown = Array.isArray(adv.fuelBreakdown) ? adv.fuelBreakdown : [];
     const level = (key) => Number(stationAdv[key] || 0);
-    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.5.2')}
+    return `${pageHeader(state.label || 'Fuel station','Fleet, supplier, maintenance and analytics controls','FuelOS 3.6.0')}
       ${tabs([['overview','Overview'],['refuel','Refuel'],['operations','Operations'],['advanced','Advanced'],['ledger','Ledger']])}
       <div class="grid stats">${stat('Transactions',number(analytics.transactions),'Lifetime station sales')}${stat('Average sale',money(analytics.average_transaction),'Average transaction')}${stat('Wholesale',`${number(adv.wholesaleMultiplier || state.wholesaleMultiplier || 1,2)}×`,'Network wholesale market')}${stat('Maintenance',`${number(stationAdv.maintenance || 100,1)}%`,'Pump and charger condition')}</div>
       <div class="grid two" style="margin-top:12px">
@@ -245,7 +245,12 @@
   function adminView() {
     const totals = state.totals || {};
     const stations = Array.isArray(state.stations) ? state.stations : [];
-    return `${pageHeader('Fuel network administration','Read-only operational overview across every configured station','Admin link')}<div class="grid stats">${stat('Transactions', number(totals.transactions), 'Network records')}${stat('Revenue', money(totals.revenue), 'Gross network sales')}${stat('Fuel moved', `${number(totals.fuel,1)}%`, 'Recorded volume')}${stat('Stations', number(stations.length), 'Configured locations')}</div><article class="card" style="margin-top:12px"><table class="station-table"><thead><tr><th>Station</th><th>Owner</th><th>Revenue</th><th>Stock</th><th>Price</th></tr></thead><tbody>${stations.map((station)=>`<tr><td>${esc(station.label)}</td><td>${esc(station.owner || 'Unowned')}</td><td>${money(station.totalSales)}</td><td>${number(station.stock,0)} / ${number(station.capacity,0)}</td><td>${number(station.priceMultiplier,2)}×</td></tr>`).join('')}</tbody></table></article>`;
+    return `${pageHeader('Fuel network administration','Create and monitor player-ownable stations and private chargers','Admin link')}<div class="grid stats">${stat('Transactions', number(totals.transactions), 'Network records')}${stat('Revenue', money(totals.revenue), 'Gross network sales')}${stat('Fuel moved', `${number(totals.fuel,1)}%`, 'Recorded volume')}${stat('Stations', number(stations.length), 'Configured locations')}</div>
+      <div class="grid two" style="margin-top:12px">
+        <article class="card"><div class="section-title"><h2>Station builder</h2><span>3.6.0</span></div><p style="color:var(--muted);font-size:10px;line-height:1.6">Stand where the station should be created. Every custom station is immediately ownable and starts full while unowned. Buying it resets stock to zero.</p><button class="primary wide" id="admin-create-station">Create station at my position</button></article>
+        <article class="card"><div class="section-title"><h2>Private EV charger</h2><span>House / business</span></div><p style="color:var(--muted);font-size:10px;line-height:1.6">Stand where the charger should spawn, then link it to an existing station ID. The charger persists after restart.</p><button class="secondary wide" id="admin-create-charger">Create charger at my position</button></article>
+      </div>
+      <article class="card" style="margin-top:12px"><table class="station-table"><thead><tr><th>Station</th><th>ID</th><th>Owner</th><th>Revenue</th><th>Stock</th><th>Price</th></tr></thead><tbody>${stations.map((station)=>`<tr><td>${esc(station.label)}</td><td>${esc(station.id || '')}</td><td>${esc(station.owner || 'Unowned')}</td><td>${money(station.totalSales)}</td><td>${number(station.stock,0)} / ${number(station.capacity,0)}</td><td>${number(station.priceMultiplier,2)}×</td></tr>`).join('')}</tbody></table></article>`;
   }
 
   function render() {
@@ -303,6 +308,20 @@
     app.querySelectorAll('.upgrade-button').forEach((button)=>button.addEventListener('click',async()=>{const response=await post('upgradeStation',{stationId:state.id,upgrade:button.dataset.upgrade});toast(response?.message||'Upgrade failed.',response?.success?'success':'error');if(response?.success)refreshStation();}));
     app.querySelectorAll('.remove-employee').forEach((button)=>button.addEventListener('click',async()=>{const response=await post('removeStationEmployee',{stationId:state.id,identifier:button.dataset.identifier});toast(response?.message||'Employee update failed.',response?.success?'success':'error');if(response?.success)refreshStation();}));
     document.getElementById('add-employee')?.addEventListener('click', openEmployeeModal);
+    document.getElementById('admin-create-station')?.addEventListener('click', async () => {
+      const label=window.prompt('Station name','Custom Fuel Station'); if(!label) return;
+      const purchasePrice=Number(window.prompt('Purchase price','200000')||200000);
+      const capacity=Number(window.prompt('Fuel capacity','15000')||15000);
+      const response=await post('adminCreateStation',{label,purchasePrice,capacity});
+      toast(response?.message||'Station creation failed.',response?.success?'success':'error');
+      if(response?.success){const fresh=await post('fuelClose');setTimeout(()=>{},0);}
+    });
+    document.getElementById('admin-create-charger')?.addEventListener('click', async () => {
+      const stationId=window.prompt('Station ID to link this charger to'); if(!stationId) return;
+      const label=window.prompt('Charger name','Private EV Charger')||'Private EV Charger';
+      const response=await post('adminCreateCharger',{stationId,label,fastCharge:true});
+      toast(response?.message||'Charger creation failed.',response?.success?'success':'error');
+    });
   }
   async function refreshStation(showToast = true){const response=await post('refreshStation',{stationId:state.id});if(response?.success&&response.data){const vehicle=state.vehicle;state=response.data;if(vehicle)state.vehicle=vehicle;if(showToast)toast('Station data synchronised.','success');render();return true;}toast(response?.message||'Refresh failed.','error');return false;}
   function open(payload){mode=payload.mode||'refuel';utility=null;state=payload.data||{};activeTab='overview';const valid=visibleFuelTypes();selectedFuel=valid[0]?.id||null;root.classList.add('visible');root.setAttribute('aria-hidden','false');render();}

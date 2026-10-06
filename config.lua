@@ -33,6 +33,17 @@ PSFuelConfig.Security = {
     RobberyGraceMs = 1500,
     DeliveryVehicleDistance = 25.0,
     RequireDeliveryDriverSeat = true,
+    DeliveryCompleteWindowMs = 2500,
+    DeliveryCompleteBurst = 1,
+    -- Absolute server-side ceiling for one delivery payout. The client never supplies this amount.
+    MaxDeliveryReward = 50000,
+    -- Limits a single owner withdrawal; larger station balances remain in the station for later withdrawals.
+    MaxStationWithdrawal = 250000,
+    -- Safety ceilings for other server-authorised credits/refunds.
+    MaxRobberyReward = 100000,
+    MaxRefundCredit = 10000000,
+    SuspiciousWindowMs = 3000,
+    SuspiciousBurst = 2,
 }
 
 PSFuelConfig.DatabaseMaintenance = {
@@ -110,8 +121,8 @@ PSFuelConfig.AutoRestock = {
     IntervalMinutes = 30,
     Amount = 750.0,
 
-    -- Owned stations can also auto-restock.
-    RestockOwnedStations = true,
+    -- 3.6.0: owned stations must be supplied by player/AI deliveries.
+    RestockOwnedStations = false,
 
     -- If false, stations at full capacity are ignored.
     RestockOnlyWhenBelowCapacity = true,
@@ -850,6 +861,7 @@ PSFuelConfig.Advanced = {
     Analytics = { Enabled = true },
     Discord = {
         Enabled = false,
+        -- Only official Discord webhook URLs are accepted by the server.
         Webhook = '',
         Events = { purchases=true, withdrawals=true, robberies=true, admin=true, suspicious=true },
     },
@@ -1003,3 +1015,69 @@ PSFuelConfig.Stations = {
     { id = 'strawberry_south', label = 'Strawberry South Fuel', coords = vec3(-319.292, -1471.715, 30.549), priceMultiplier = 1.00, capacity = 15000.0, ownershipEnabled = false, deliveryEnabled = false, interactionDistance = 34.0 },
 }
 
+
+
+-- ============================================================================
+-- PS Fuel 3.6.0 gameplay/security additions
+-- ============================================================================
+PSFuelConfig.Ownership.DefaultEnabled = true
+PSFuelConfig.Ownership.DefaultPurchasePrice = PSFuelConfig.Ownership.DefaultPurchasePrice or 200000
+PSFuelConfig.Ownership.PurchaseResetsStock = true
+PSFuelConfig.Ownership.UnownedStationsAlwaysFull = true
+
+-- 3.6.0 economy rule: automatic restocking may keep public/unowned stations available,
+-- but it must never magically refill a player-owned business.
+if PSFuelConfig.AutoRestock then
+    PSFuelConfig.AutoRestock.RestockOwnedStations = false
+end
+
+-- Every configured GTA fuel station is purchasable unless explicitly disabled by an admin.
+-- Existing 3.5.x public entries are promoted to ownable stations here so servers upgrading
+-- do not have to manually edit every station block.
+for _, station in ipairs(PSFuelConfig.Stations or {}) do
+    if station.forcePublic ~= true then
+        station.ownershipEnabled = true
+        station.deliveryEnabled = true
+        station.purchasePrice = tonumber(station.purchasePrice) or PSFuelConfig.Ownership.DefaultPurchasePrice
+    end
+end
+
+PSFuelConfig.FuelRecovery = {
+    Enabled = true,
+    UseOxTarget = true,
+    TargetDistance = 2.5,
+    ProgressMs = 8500,
+    -- The server decides the amount. Clients never submit an amount to drain.
+    MaxDrainPercentPerAction = 100.0,
+    RequireEngineOff = true,
+    ClearWrongFuelContamination = true,
+    AllowAnyVehicle = true,
+    CooldownMs = 5000,
+}
+
+PSFuelConfig.NpcStationDeliveries = {
+    Enabled = true,
+    -- Server inventory is filled in secure stages while one client only renders the GTA AI visual.
+    TravelSeconds = 25, -- secure server-side grace period for the GTA AI tanker to arrive
+    UnloadSeconds = 50,
+    FillSteps = 10,
+    VisualSpawnDistance = 150.0,
+    VisualDespawnDistance = 220.0,
+    TruckModels = { 'tanker', 'tanker2', 'armytanker' },
+    TractorModels = { 'phantom', 'hauler', 'packer' },
+    DriverModels = {
+        's_m_m_trucker_01', 's_m_y_construct_01', 's_m_y_dockwork_01',
+        's_m_m_autoshop_01', 's_m_y_xmech_01', 's_m_y_xmech_02',
+        'a_m_m_farmer_01', 'a_m_m_hillbilly_01'
+    },
+}
+
+PSFuelConfig.AdminBuilder = {
+    Enabled = true,
+    DefaultStationCapacity = 15000.0,
+    DefaultPurchasePrice = 200000,
+    MaxStationCapacity = 100000.0,
+    MaxPurchasePrice = 25000000,
+    MaxCreateDistance = 6.0,
+    DefaultPumpModel = 'prop_gas_pump_1a',
+}

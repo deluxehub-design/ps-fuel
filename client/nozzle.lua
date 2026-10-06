@@ -25,7 +25,9 @@ local targetNames = {
     electricTake = 'ps-fuel:take-electric-nozzle',
     electricReturn = 'ps-fuel:return-electric-nozzle',
     vehicleInsert = 'ps-fuel:insert-nozzle',
+    vehicleRemove = 'ps-fuel:remove-nozzle',
     jerryCanBuy = 'ps-fuel:buy-jerry-can',
+    stationManage = 'ps-fuel:station-manage',
 }
 
 local function notify(message, kind)
@@ -345,7 +347,15 @@ local function takeNozzle(entity, kind, charger)
             end
 
             local coords = GetEntityCoords(source)
-            if #(GetEntityCoords(cache.ped or PlayerPedId()) - coords) > maxDistance then
+            local distance
+            if state.kind == 'electric' and state.vehicle and DoesEntityExist(state.vehicle) then
+                -- Once an EV is plugged in the driver may walk away. The cable is limited
+                -- by charger-to-vehicle distance, not charger-to-player distance.
+                distance = #(GetEntityCoords(state.vehicle) - coords)
+            else
+                distance = #(GetEntityCoords(cache.ped or PlayerPedId()) - coords)
+            end
+            if distance > maxDistance then
                 hoseBreak()
                 break
             end
@@ -375,13 +385,29 @@ local function insertNozzle(vehicle)
         return notify('The refuelling terminal is unavailable.', 'error')
     end
 
-    PSFuelRuntime.OpenRefuelPanel(vehicle, state.station, {
-        paymentAccount = state.paymentAccount,
-        nozzleKind = state.kind,
-        chargerId = state.charger and state.charger.id or nil,
-        physicalNozzle = true,
-        sessionToken = state.sessionToken,
-    })
+    notify(state.kind == 'electric'
+        and 'Charging connector inserted. Press E to start charging. You can walk away once charging starts.'
+        or 'Fuel nozzle inserted. Stand by the vehicle and press E to start fuelling.', 'inform')
+
+    CreateThread(function()
+        local opened = false
+        while state.vehicle == vehicle and state.kind and not state.refuelling and not opened do
+            local ped = cache.ped or PlayerPedId()
+            local nearVehicle = DoesEntityExist(vehicle) and #(GetEntityCoords(ped) - GetEntityCoords(vehicle)) <= 3.5
+            if nearVehicle and IsControlJustPressed(0, 38) then
+                opened = true
+                PSFuelRuntime.OpenRefuelPanel(vehicle, state.station, {
+                    paymentAccount = state.paymentAccount,
+                    nozzleKind = state.kind,
+                    chargerId = state.charger and state.charger.id or nil,
+                    physicalNozzle = true,
+                    sessionToken = state.sessionToken,
+                })
+                break
+            end
+            Wait(0)
+        end
+    end)
 end
 
 local function buyJerryCanAtPump()
@@ -459,7 +485,7 @@ local function registerTargets()
             label = 'Return fuel nozzle',
             distance = tonumber(config.InteractionDistance) or 2.0,
             canInteract = function(entity)
-                return state.kind == 'fuel' and not state.refuelling and state.sourceEntity == entity
+                return state.kind == 'fuel' and not state.refuelling and state.vehicle == nil and state.sourceEntity == entity
             end,
             onSelect = function() returnNozzle(false) end,
         },
@@ -475,6 +501,22 @@ local function registerTargets()
                     and not IsPedInAnyVehicle(cache.ped or PlayerPedId(), false)
             end,
             onSelect = buyJerryCanAtPump,
+        },
+        {
+            name = targetNames.stationManage,
+            icon = 'fa-solid fa-store',
+            label = 'Buy / manage fuel station',
+            distance = math.max(2.5, tonumber(config.InteractionDistance) or 2.0),
+            canInteract = function()
+                return state.kind == nil and not IsPedInAnyVehicle(cache.ped or PlayerPedId(), false)
+            end,
+            onSelect = function()
+                local station = PSFuelRuntime and PSFuelRuntime.NearestStation and select(1, PSFuelRuntime.NearestStation())
+                if not station then return notify('This pump is not linked to a configured station.', 'error') end
+                if PSFuelRuntime and PSFuelRuntime.OpenStationTablet then
+                    PSFuelRuntime.OpenStationTablet(station)
+                end
+            end,
         },
     })
 
@@ -495,7 +537,7 @@ local function registerTargets()
             label = 'Return charging connector',
             distance = tonumber(config.InteractionDistance) or 2.0,
             canInteract = function(entity)
-                return state.kind == 'electric' and not state.refuelling and state.sourceEntity == entity
+                return state.kind == 'electric' and not state.refuelling and state.vehicle == nil and state.sourceEntity == entity
             end,
             onSelect = function() returnNozzle(false) end,
         },
@@ -510,6 +552,21 @@ local function registerTargets()
             bones = config.VehicleBones,
             canInteract = function(entity) return canUseVehicle(entity) end,
             onSelect = function(data) insertNozzle(data.entity) end,
+        },
+        {
+            name = targetNames.vehicleRemove,
+            icon = 'fa-solid fa-hand',
+            label = 'Remove nozzle / connector',
+            distance = tonumber(config.VehicleTargetDistance) or 3.0,
+            bones = config.VehicleBones,
+            canInteract = function(entity)
+                return state.kind ~= nil and state.vehicle == entity and not state.refuelling
+            end,
+            onSelect = function()
+                if attachToHand() then
+                    notify('Nozzle removed. Turn around and return it to the pump or charger.', 'inform')
+                end
+            end,
         }
     })
 end
@@ -550,6 +607,9 @@ function PSFuelNozzle.IsSessionValid(vehicle, station)
     local maxDistance = state.kind == 'electric'
         and (tonumber(electricConfig.MaxCableDistance) or tonumber(config.MaxDistance) or 7.5)
         or (tonumber(config.MaxDistance) or 7.5)
+    if state.kind == 'electric' and state.vehicle and DoesEntityExist(state.vehicle) then
+        return #(GetEntityCoords(state.vehicle) - GetEntityCoords(state.sourceEntity)) <= maxDistance
+    end
     return #(GetEntityCoords(cache.ped or PlayerPedId()) - GetEntityCoords(state.sourceEntity)) <= maxDistance
 end
 
@@ -584,11 +644,14 @@ function PSFuelNozzle.OnRefuelStop(fuelType)
         stopSound((config.Sounds or {}).FuelLoop or 'refuel')
         playSound((config.Sounds or {}).FuelStop or 'fuelstop')
     end
-    attachToHand()
+    -- 3.6.0: the physical nozzle/connector remains inserted after flow stops.
+    -- The player must third-eye the vehicle to remove it, then return it to the pump.
 end
 
 function PSFuelNozzle.CancelVehicleAttachment()
-    if state.kind and state.vehicle and not state.refuelling then attachToHand() end
+    -- 3.6.0 intentionally keeps an inserted nozzle/connector in the vehicle when
+    -- the UI closes. Removal is a separate third-eye action on the vehicle.
+    return state.vehicle ~= nil
 end
 
 function PSFuelNozzle.Return()
@@ -614,6 +677,30 @@ local function nearestSpawnedCharger()
     if closestDistance and closestDistance <= maxDistance then
         return closestEntity, closestCharger
     end
+end
+
+function PSFuelNozzle.AddRuntimeCharger(charger)
+    if type(charger) ~= 'table' or not charger.id or not charger.coords then return false end
+    electricConfig.Chargers = electricConfig.Chargers or {}
+    for _, existing in ipairs(electricConfig.Chargers) do
+        if existing.id == charger.id then return true end
+    end
+    electricConfig.Chargers[#electricConfig.Chargers + 1] = charger
+    if electricConfig.Enabled == false or electricConfig.SpawnChargers == false then return true end
+    local hash = loadModel(electricConfig.ChargerModel)
+    if not hash then return false end
+    local coords=charger.coords
+    local object=CreateObjectNoOffset(hash,coords.x,coords.y,coords.z,false,false,false)
+    if object and object~=0 then
+        SetEntityHeading(object,(coords.w or 0.0)-180.0)
+        SetEntityAsMissionEntity(object,true,true)
+        FreezeEntityPosition(object,true)
+        SetEntityInvincible(object,true)
+        spawnedChargers[#spawnedChargers+1]=object
+        chargerByEntity[object]=charger
+    end
+    SetModelAsNoLongerNeeded(hash)
+    return object and object~=0
 end
 
 -- Compatibility with scripts that previously depended on cdn-fuel's public
@@ -689,12 +776,12 @@ AddEventHandler('onResourceStop', function(resourceName)
     returnNozzle(true, true)
     if config.UseOxTarget ~= false then
         pcall(function() exports.ox_target:removeModel(PSFuelConfig.PumpModels or {}, {
-            targetNames.fuelTake, targetNames.fuelReturn, targetNames.jerryCanBuy
+            targetNames.fuelTake, targetNames.fuelReturn, targetNames.jerryCanBuy, targetNames.stationManage
         }) end)
         pcall(function() exports.ox_target:removeModel(electricConfig.ChargerModel, {
             targetNames.electricTake, targetNames.electricReturn
         }) end)
-        pcall(function() exports.ox_target:removeGlobalVehicle(targetNames.vehicleInsert) end)
+        pcall(function() exports.ox_target:removeGlobalVehicle({targetNames.vehicleInsert,targetNames.vehicleRemove}) end)
     end
     if PSFuelRuntime and PSFuelRuntime.StopAllSounds then PSFuelRuntime.StopAllSounds() end
     for _, object in ipairs(spawnedChargers) do

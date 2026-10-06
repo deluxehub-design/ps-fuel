@@ -1,8 +1,22 @@
-# PS Fuel 3.5.2 — Vehicle Fuel Category Auto-Detection
+# PS Fuel 3.6.0 — Ownership, Fuel Recovery & Security Release
 
-PS Fuel 3.5.2 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
 
-Repository: `deluxehub-evolvenetwork/ps-fuel`
+## What is new in 3.6.0
+
+- Every configured GTA fuel station is ownable by default. Unowned stations stay supplied; purchasing one resets its stock to zero.
+- Owners can order GTA AI supplier deliveries. A randomized GTA driver/truck/tanker arrives visually and station stock rises gradually while unloading.
+- Secure vehicle fuel recovery lets players third-eye a vehicle and drain old or incorrect fuel. The server owns the drain amount and clears contamination.
+- Physical nozzles now remain inserted after fuelling until removed with third-eye and physically returned to the pump.
+- EV connectors can remain plugged in while the player walks away, as long as charger-to-vehicle cable distance remains valid.
+- FuelOS admins can create persistent ownable stations and private/home EV chargers at their current position.
+- Client fuel persistence can no longer increase a stored tank without a server-authorised purchase. Purchase litre/kWh volume is recalculated server-side.
+- Money credits use short-lived server-only vouchers, and delivery rewards are pre-reserved in one-time database claims before the job begins.
+
+See `RELEASE-3.6.0.md` for the full release notes.
+
+PS Fuel 3.6.0 is a physical multi-fuel and EV energy system for FiveM. It keeps the existing 0–100 fuel compatibility interface used by JG, TGIANN, garage and HUD scripts while adding real tank volume, fuel quality, fleet billing, vehicle wear, station operations, EV battery health and secured fuel-transfer gameplay.
+
+Repository: `deluxehub-design/ps-fuel`
 
 ## Core support
 
@@ -557,13 +571,13 @@ Administrative fleet commands:
 The installed version is read from `fxmanifest.lua`:
 
 ```lua
-version '3.5.2'
+version '3.6.0'
 ```
 
 `version.lua` checks the latest GitHub release from:
 
 ```text
-deluxehub-evolvenetwork/ps-fuel
+deluxehub-design/ps-fuel
 ```
 
 It runs shortly after resource startup and then every six hours. From the server console:
@@ -585,7 +599,7 @@ For new code, prefer PS Fuel exports because they update the cache, statebags an
 ## Upgrade from 3.3.0
 
 1. Back up the existing resource and database.
-2. Replace the resource with 3.5.2.
+2. Replace the resource with 3.6.0.
 3. Merge your custom station/model configuration into the new `config.lua`.
 4. Add the new inventory items from `install/items`.
 5. Confirm `ox_lib`, `oxmysql` and `ox_target` start before PS Fuel.

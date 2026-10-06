@@ -797,9 +797,13 @@ local function refuelVehicle(vehicle, station, fuelType, options)
                 and stationDistance <= stationInteractionDistance(station)
         end
 
+        local playerTooFar = #(GetEntityCoords(cache.ped) - GetEntityCoords(vehicle)) > (PSFuelConfig.VehicleDistance + 1.5)
+        -- Physical EV charging continues after the connector is inserted; the player may
+        -- walk away while the charger-to-vehicle cable remains valid.
+        if electric and physicalNozzle then playerTooFar = false end
         if not validSource
             or not DoesEntityExist(vehicle)
-            or #(GetEntityCoords(cache.ped) - GetEntityCoords(vehicle)) > (PSFuelConfig.VehicleDistance + 1.5)
+            or playerTooFar
         then
             stopReason = ('%s stopped because you moved away from the %s or vehicle.'):format(
                 electric and 'Charging' or 'Refuelling',
@@ -829,7 +833,7 @@ local function refuelVehicle(vehicle, station, fuelType, options)
             break
         end
 
-        setFuel(vehicle, fuel + amount)
+        setFuel(vehicle, tonumber(response.authoritativeFuel) or (fuel + amount))
         purchased = purchased + amount
         paid = paid + (tonumber(response.price) or 0)
         if activeWorldFuelDisplay then
@@ -1557,6 +1561,7 @@ PSFuelRuntime.SupportsFastCharge = vehicleSupportsFastCharge
 PSFuelRuntime.GetVehicleProfile = configuredVehicleProfile
 PSFuelRuntime.FuelTypeAllowed = fuelTypeAllowed
 PSFuelRuntime.OpenRefuelPanel = openRefuelPanel
+PSFuelRuntime.OpenStationTablet = openStationTablet
 PSFuelRuntime.RefuelVehicle = refuelVehicle
 PSFuelRuntime.IsRefuelling = function() return isRefuelling end
 PSFuelRuntime.CloseFuelUi = function(silent) forceCloseUi(false, silent == true, false) end

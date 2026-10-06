@@ -4,7 +4,7 @@ game 'gta5'
 name 'ps-fuel'
 author 'PS Development / Techy / PLUUUX Solutions'
 description 'Universal multi-fuel and EV energy system with fuel grades, biofuels, aviation fuels, fleet operations and stations'
-version '3.5.2'
+version '3.6.0'
 
 
 ui_page 'web/index.html'
@@ -19,7 +19,8 @@ shared_scripts {
 client_scripts {
     'client/main.lua',
     'client/nozzle.lua',
-    'client/advanced.lua'
+    'client/advanced.lua',
+    'client/v360.lua'
 }
 
 server_scripts {
@@ -30,6 +31,7 @@ server_scripts {
     'server/database.lua',
     'server/advanced.lua',
     'server/main.lua',
+    'server/v360.lua',
     'version.lua'
 }
 

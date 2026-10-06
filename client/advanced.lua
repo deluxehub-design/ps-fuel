@@ -319,25 +319,18 @@ RegisterCommand('roadsidefuel',function()
     notify('Roadside fuel request sent.','success')
 end,false)
 
-RegisterCommand('siphonfuel',function(_,args)
-    if (((PSFuelConfig.Advanced or {}).Siphoning or {}).Enabled)~=true then return end
+RegisterCommand('siphonfuel',function()
+    if (PSFuelConfig.FuelRecovery or {}).Enabled~=true then return end
     local vehicle=PSFuelRuntime and PSFuelRuntime.ClosestVehicle and PSFuelRuntime.ClosestVehicle()
     if not vehicle or vehicle==0 then return notify('No vehicle found.','error') end
-    local requested=S.ToBaseVolume(tonumber(args[1]) or 5)
-    local amount=math.min(requested,tonumber((((PSFuelConfig.Advanced or {}).Siphoning or {}).MaximumLitres) or 20))
-    if amount<=0 then return end
-    local cap=A.GetFuelCapacity(vehicle)
-    local available=S.PercentToVolume(fuel(vehicle),cap)
-    amount=math.min(amount,available)
-    if amount<=0 then return notify('The tank is empty.','error') end
-    if not lib.skillCheck({'easy','medium'},{'w','a','s','d'}) then return notify('Siphoning failed.','error') end
-    local response=lib.callback.await('ps-fuel:server:siphonFuel',false,NetworkGetNetworkIdFromEntity(vehicle),amount,A.GetFuelType(vehicle),syncedVehicleClass(vehicle))
-    if response and response.success then
-        PSFuelRuntime.SetFuel(vehicle,response.fuel)
-        notify(response.message,'success')
-    else
-        notify(response and response.message or 'Siphoning failed.','error')
-    end
+    local netId=NetworkGetNetworkIdFromEntity(vehicle)
+    if netId==0 then NetworkRegisterEntityAsNetworked(vehicle);netId=NetworkGetNetworkIdFromEntity(vehicle) end
+    local begin=lib.callback.await('ps-fuel:server:beginSiphon',false,netId)
+    if not begin or not begin.success then return notify(begin and begin.message or 'Fuel recovery failed.','error') end
+    local ok=lib.progressCircle({duration=tonumber((PSFuelConfig.FuelRecovery or {}).ProgressMs) or 8500,label='Draining fuel tank...',canCancel=true,disable={move=true,car=true,combat=true},anim={dict='timetable@gardener@filling_can',clip='gar_ig_5_filling_can'}})
+    if not ok then return notify('Fuel recovery cancelled.','warning') end
+    local response=lib.callback.await('ps-fuel:server:completeSiphon',false,begin.token)
+    notify(response and response.message or 'Fuel recovery failed.',response and response.success and 'success' or 'error')
 end,false)
 
 RegisterCommand('fueltransfer',function(_,args)
